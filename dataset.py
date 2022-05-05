@@ -6,9 +6,10 @@ import numpy as np
 import torch
 
 class KenaukDataset(Dataset):
-    def __init__(self, image_dir, mask_dir, transform=None):
+    def __init__(self, image_dir, mask_dir, mnt_dir, transform=None):
         self.image_dir = image_dir
         self.mask_dir = mask_dir
+        self.mnt_dir = mnt_dir
         self.transform = transform
         self.images = os.listdir(image_dir)
 
@@ -18,6 +19,7 @@ class KenaukDataset(Dataset):
     def __getitem__(self, index):
         img_path = os.path.join(self.image_dir, self.images[index])
         mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2_print", "mask_bin"))
+        mnt_path = os.path.join(self.mnt_dir, self.images[index].replace("sen2_print", "lidar"))
         
         # input depug 
         #img_path = os.path.join(self.image_dir, self.images[68])
@@ -53,6 +55,10 @@ class KenaukDataset(Dataset):
         # divide the array by 10000 so all the value are between [0-1]
         image = image/10000
 
+        img_mnt = np.array(tiff.imread(mnt_path))
+        img_mnt = np.expand_dims(img_mnt, axis=2)
+
+        image = np.dstack((image, img_mnt))
 
         #mask = np.array(tiff.imread(mask_path)) / 255
         mask = np.array(tiff.imread(mask_path)) 

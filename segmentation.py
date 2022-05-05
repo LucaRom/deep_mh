@@ -369,13 +369,6 @@ class SemSegment(LightningModule):
     #     return parser
 
 class MyPrintingCallback(Callback):
-
-    def on_init_start(self, trainer):
-        print('Starting to init trainer!')
-
-    def on_init_end(self, trainer):
-        print('trainer is init now')
-
     def on_train_end(self, trainer, pl_module):
         #print('do something when training ends')
         print("End of training")
@@ -488,22 +481,27 @@ if __name__ == "__main__":
      # Import data with custom loader
     TRAIN_IMG_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/train"
     TRAIN_MASK_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/mask_bin/train"
+    TRAIN_MNT_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/lidar_mnt/train"
     VAL_IMG_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/val"
     VAL_MASK_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/mask_bin/val"
+    VAL_MNT_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/lidar_mnt/val"
     PIN_MEMORY = True
     NUM_WORKERS = 1
     BATCH_SIZE = 4
-    num_epochs = 100        
+    num_epochs = 100       
     optim_main = "Ad"  # 'Ad' ou 'sg'
     lr_main = 0.001
-    num_layers_main = 5
-    input_channel_main = 13
+    num_layers_main = 4
+    print("ATTENTION NUM LAYERS AT 4 INSTEAD OF 5")
+    input_channel_main = 14
 
     train_loader, val_loader, test_loader = get_loaders(
     TRAIN_IMG_DIR,
     TRAIN_MASK_DIR,
     VAL_IMG_DIR,
     VAL_MASK_DIR,
+    TRAIN_MNT_DIR,
+    VAL_MNT_DIR,
     BATCH_SIZE,
     # train_transform,
     # val_transforms,

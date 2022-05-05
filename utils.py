@@ -9,6 +9,8 @@ def get_loaders(
     train_maskdir,
     val_dir,
     val_maskdir,
+    train_mnt,
+    val_mnt,
     batch_size,
     #train_transform,
     #val_transform,
@@ -18,6 +20,7 @@ def get_loaders(
     train_ds = KenaukDataset(
         image_dir=train_dir,
         mask_dir=train_maskdir,
+        mnt_dir=train_mnt,
         #transform=train_transform
     )
 
@@ -32,6 +35,7 @@ def get_loaders(
     val_ds = KenaukDataset(
         image_dir=val_dir,
         mask_dir=val_maskdir,
+        mnt_dir=val_mnt,
         #transform=val_transform,
     )
 
@@ -45,7 +49,8 @@ def get_loaders(
 
     test_ds = KenaukDataset(
         image_dir=val_dir,
-        mask_dir=val_maskdir
+        mask_dir=val_maskdir,
+        mnt_dir=val_mnt,
     )
 
     test_loader = DataLoader(
