@@ -11,7 +11,8 @@ class KenaukDataset(Dataset):
         self.mask_dir = mask_dir
         self.mnt_dir = mnt_dir
         self.transform = transform
-        self.images = os.listdir(image_dir)
+        #self.images = os.listdir(image_dir)
+        self.images = [x for x in os.listdir(image_dir) if x.endswith(('.tif'))]
 
     def __len__(self):
         return len(self.images)

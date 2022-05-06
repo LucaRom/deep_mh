@@ -488,7 +488,7 @@ if __name__ == "__main__":
     PIN_MEMORY = True
     NUM_WORKERS = 1
     BATCH_SIZE = 4
-    num_epochs = 100       
+    num_epochs = 500    
     optim_main = "Ad"  # 'Ad' ou 'sg'
     lr_main = 0.001
     num_layers_main = 4
