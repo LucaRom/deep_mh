@@ -8,11 +8,13 @@ from torch.nn import functional as F
 import numpy as np
 from pytorch_lightning.loggers import TensorBoardLogger
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
+import rasterio
 
 import matplotlib.pyplot as plt
 
-from pl_bolts.models.vision.unet import UNet
-from pytorch_lightning.callbacks import Callback
+#from pl_bolts.models.vision.unet import UNet
+from unet_multi import UNet
+from pytorch_lightning.callbacks import Callback, ModelCheckpoint
 
 # Custom LR
 from utils import get_loaders
@@ -72,13 +74,17 @@ class SemSegment(LightningModule):
         self.net = UNet(
             num_classes=num_classes,
             input_channels=input_channel_main,
+            input_channels_lidar=input_channel_lidar,
             num_layers=self.num_layers,
             features_start=self.features_start,
             bilinear=self.bilinear,
         )
 
-    def forward(self, x):
-        return self.net(x)
+    # def forward(self, x):
+    #     return self.net(x)
+
+    def forward(self, x, y):
+        return self.net(x, y)
 
     def on_train_start(self):
         tensorboard = self.logger.experiment
@@ -95,10 +101,16 @@ class SemSegment(LightningModule):
         # mask = mask.long()
         # out = self(img)
 
-        img, mask = batch   # x, y
-        #img = img.float()   # x
-        #mask = mask.long()
-        preds = self(img)   # predictions
+        # img, mask = batch   # x, y
+        # #img = img.float()   # x
+        # #mask = mask.long()
+        # preds = self(img)   # predictions
+
+        img, lidar, mask, img_path = batch # img_poth only needed in test, but still carried 
+                                           # TODO fix with a if "test" in dataset...
+
+        #with torch.cuda.amp.autocast():
+        preds = self(img, lidar)
 
         mask_loss = mask.float().unsqueeze(1)
         preds_loss = preds.float()
@@ -131,7 +143,7 @@ class SemSegment(LightningModule):
 
     def training_epoch_end(self, outputs):
         avg_loss = torch.stack([x['loss'] for x in outputs]).mean().detach().cpu()
-        self.log('loss_avg', avg_loss, prog_bar=True, logger=True)
+        self.log('train_loss_avg', avg_loss, prog_bar=True, logger=True, on_epoch=True) 
 
         # # compute metrics
         # train_accuracy = self.train_accuracy.compute()
@@ -152,10 +164,11 @@ class SemSegment(LightningModule):
         # mask = mask.long()
         # out = self(img)
 
-        img, mask = batch   # x, y
+        img, lidar, mask, img_path = batch  #img_path only needed in test
         img = img.float()   # x
+        lidar = lidar.float()
         mask = mask.long()  # y 
-        preds = self(img)   # predictions
+        preds = self(img, lidar)   # predictions
 
         #confmat = ConfusionMatrix(num_classes=2).to(device=device)
         #self.conf_print = confmat(preds, mask)
@@ -180,7 +193,9 @@ class SemSegment(LightningModule):
         return {"val_loss": val_loss, "val_acc": val_accu}
 
     def validation_epoch_end(self, outputs):
-        loss_val = torch.stack([x["val_loss"] for x in outputs]).mean()
+        loss_val = torch.stack([x["val_loss"] for x in outputs]).mean().detach().cpu()
+        self.log('val_loss_avg', loss_val, on_epoch=True) 
+
         log_dict = {"val_loss": loss_val}
 
         #print(self.conf_print)
@@ -190,17 +205,19 @@ class SemSegment(LightningModule):
 
     def test_step(self, batch, batch_idx):
         self.trainer.model.eval()
-        x, y = batch
+        x, y, z, img_path = batch
         x = x.float()   # x
-        y = y.long()    # y 
-        preds = self(x)   # predictions
+        y = y.float()   # y 
+        z = z.long()    # y 
+
+        preds = self(x, y)   # predictions
         self.trainer.model.train()
 
         preds_temp   = np.multiply((preds.sigmoid().cpu() > 0.5),1)
         preds_recast = preds_temp.type(torch.IntTensor).to(device=device)     
 
         confmat = ConfusionMatrix(num_classes=2).to(device=device)
-        conf_print = confmat(preds_recast, y)
+        conf_print = confmat(preds_recast, z)
 
         # mask_loss = mask.float().unsqueeze(1) # Unsqueeze for BCE
 
@@ -236,9 +253,11 @@ class SemSegment(LightningModule):
         # #        print (y_reel)
     
         #return {'test_loss': loss, 'test_preds': preds, 'test_target': y}
-        return {'conf matrice': conf_print, 'preds' : preds, 'x' : x, 'y' : y}
+        return {'conf matrice': conf_print, 'preds' : preds, 'x' : x, 'y' : y, 'z' : z, 'img_path' : img_path}
 
     def test_epoch_end(self, outputs):
+        # TODO Add logs to test aswell?
+
         # get confusion matrix
         # for x in range(len(outputs)):
         #     outputs_confmat = outputs[x]['conf matrice'].cpu().numpy()
@@ -260,11 +279,29 @@ class SemSegment(LightningModule):
             plt.savefig("lightning_logs/version_{version}/cm_{num}.png".format(version = self.trainer.logger.version, num = x))
             plt.close(fig)
 
+            # Extract CRS and transforms
+            img_path = outputs[x]['img_path']
+            src = rasterio.open(img_path[0])
+            sample_crs = src.crs
+            transform_ori = src.transform
+            src.close() # Needed?
+
             ori_input = outputs[x]['x'][0].cpu().numpy()
-            ori_target = outputs[x]['y'][0].cpu().numpy()
+            ori_target = outputs[x]['z'][0].cpu().numpy()
             #predict_sig = outputs[sample]['preds'][].cpu().squeeze().sigmoid().numpy()
             predict_sig = outputs[x]['preds'][0].cpu().squeeze().sigmoid().numpy()
             predict_sig = np.multiply((predict_sig > 0.5),1)
+
+            # write predict image to file
+            tiff_save_path = "lightning_logs/version_{version}/predict_geo_{num}.tif".format(version = self.trainer.logger.version, num = x)
+            predict_img = rasterio.open(tiff_save_path, 'w', driver='GTiff',
+                            height = 512, width = 512,
+                            count=1, dtype=str(predict_sig.dtype),
+                            crs=sample_crs,
+                            transform=transform_ori)
+
+            predict_img.write(predict_sig, 1)
+            predict_img.close()
 
             fig = plt.figure()
             plt.subplot(1,3,1)
@@ -302,7 +339,7 @@ class SemSegment(LightningModule):
 
         #plt.show()
 
-        print("debug")
+        #print("debug")
 
         # for batch in outputs:
         #     for sample in range(len(batch)): 
@@ -316,7 +353,7 @@ class SemSegment(LightningModule):
 
         #unique, counts = np.unique(np.multiply((predict_sig > 0.5),1), return_counts=True)
 
-        print('debug')
+        #print('debug')
         #print(outputs)
     
     #     # avg_loss = torch.stack([x['test_loss'] for x in outputs]).detach().mean()
@@ -452,13 +489,15 @@ def cli_main():
     # trainer = Trainer(accelerator='gpu', devices=1, log_every_n_steps=1, max_epochs=50)
     # trainer.fit(model, datamodule=dm)
 
-    # logger 
-    #logger = TensorBoardLogger(save_dir='lightning_logs/', name="test", default_hp_metric=False)
+    # # Name of experiment for logs # TODO
+    # logger = TensorBoardLogger("tb_logs", name="my_model")
+
+    checkpoint_callback = ModelCheckpoint(save_top_k=2, monitor="val_loss", mode="min")
 
     # # train (custom)
     trainer = Trainer(accelerator='gpu', devices=1, 
                       log_every_n_steps=1,
-                      callbacks=[MyPrintingCallback()], 
+                      callbacks=[MyPrintingCallback(), checkpoint_callback], 
                       max_epochs=num_epochs)
 
     trainer.fit(
@@ -479,29 +518,46 @@ if __name__ == "__main__":
     #cli_main()
 
      # Import data with custom loader
-    TRAIN_IMG_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/train"
-    TRAIN_MASK_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/mask_bin/train"
-    TRAIN_MNT_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/lidar_mnt/train"
-    VAL_IMG_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/val"
-    VAL_MASK_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/mask_bin/val"
-    VAL_MNT_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/lidar_mnt/val"
+    # TRAIN_IMG_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/train"
+    # TRAIN_MASK_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/mask_bin/train"
+    # TRAIN_MNT_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/lidar_mnt/train"
+    # VAL_IMG_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/val"
+    # VAL_MASK_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/mask_bin/val"
+    # VAL_MNT_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/lidar_mnt/val"
     PIN_MEMORY = True
-    NUM_WORKERS = 1
-    BATCH_SIZE = 4
-    num_epochs = 500    
+    NUM_WORKERS = 6
+    BATCH_SIZE = 1
+    num_epochs = 2
     optim_main = "Ad"  # 'Ad' ou 'sg'
-    lr_main = 0.001
-    num_layers_main = 4
-    print("ATTENTION NUM LAYERS AT 4 INSTEAD OF 5")
-    input_channel_main = 14
+    lr_main = 0.0001
+    num_layers_main = 5
+    input_channel_main = 13
+    input_channel_lidar = 1
+
+    # train_loader, val_loader, test_loader = get_loaders(
+    # TRAIN_IMG_DIR,
+    # TRAIN_MASK_DIR,
+    # VAL_IMG_DIR,
+    # VAL_MASK_DIR,
+    # TRAIN_MNT_DIR,
+    # VAL_MNT_DIR,
+    # BATCH_SIZE,
+    # # train_transform,
+    # # val_transforms,
+    # NUM_WORKERS,
+    # PIN_MEMORY,
+    # )
+    
+    # Paths estrie
+    e_img_dir = "D:/00_Donnees/01_trainings/02_mh_double_stack/estrie/sen2"
+    e_mask_dir = "D:/00_Donnees/01_trainings/02_mh_double_stack/estrie/mask_bin"
+    #e_mask_dir = "D:/00_Donnees/01_trainings/02_mh_double_stack/estrie/mask_multi" # Multiclass
+    e_lidar_dir = "D:/00_Donnees/01_trainings/02_mh_double_stack/estrie/lidar_mnt"
 
     train_loader, val_loader, test_loader = get_loaders(
-    TRAIN_IMG_DIR,
-    TRAIN_MASK_DIR,
-    VAL_IMG_DIR,
-    VAL_MASK_DIR,
-    TRAIN_MNT_DIR,
-    VAL_MNT_DIR,
+    e_img_dir,
+    e_mask_dir,
+    e_lidar_dir,
     BATCH_SIZE,
     # train_transform,
     # val_transforms,
