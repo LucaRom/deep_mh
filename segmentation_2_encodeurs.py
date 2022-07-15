@@ -14,7 +14,7 @@ import rasterio
 import matplotlib.pyplot as plt
 
 #from pl_bolts.models.vision.unet import UNet
-from unet_multi import UNet_multi
+from unet_2enco_sum import unet_2enco_sum
 from pytorch_lightning.callbacks import Callback, ModelCheckpoint
 
 # Custom LR
@@ -76,7 +76,7 @@ class SemSegment(LightningModule):
         self.val_f1 = torchmetrics.F1Score()
 
         # Model
-        self.net = UNet_multi(
+        self.net = unet_2enco_sum(
             num_classes=num_classes,
             input_channels=input_channel_main,
             input_channels_lidar=input_channel_lidar,
@@ -533,12 +533,12 @@ if __name__ == "__main__":
     #cli_main()
 
      # Import data with custom loader
-    TRAIN_IMG_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/train"
-    TRAIN_MASK_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/mask_bin/train"
-    TRAIN_MNT_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/lidar_mnt/train"
-    VAL_IMG_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/val"
-    VAL_MASK_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/mask_bin/val"
-    VAL_MNT_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/lidar_mnt/val"
+    TRAIN_IMG_DIR = "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/train"
+    TRAIN_MASK_DIR = "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/mask_bin/train"
+    TRAIN_MNT_DIR = "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/lidar_mnt/train"
+    VAL_IMG_DIR = "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/val"
+    VAL_MASK_DIR = "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/mask_bin/val"
+    VAL_MNT_DIR = "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/lidar_mnt/val"
     PIN_MEMORY = True
     NUM_WORKERS = 6
     BATCH_SIZE = 2
@@ -564,15 +564,15 @@ if __name__ == "__main__":
     # )
     
     # Paths estrie
-    e_img_dir = "D:/00_Donnees/01_trainings/02_mh_double_stack/estrie/sen2"
-    e_mask_dir = "D:/00_Donnees/01_trainings/02_mh_double_stack/estrie/mask_bin"
-    #e_mask_dir = "D:/00_Donnees/01_trainings/02_mh_double_stack/estrie/mask_multi" # Multiclass
-    e_lidar_dir = "D:/00_Donnees/01_trainings/02_mh_double_stack/estrie/lidar_mnt"
+    e_img_dir = "/mnt/Data/00_Donnees/01_trainings/02_mh_double_stack/estrie/sen2"
+    e_mask_dir = "/mnt/Data/00_Donnees/01_trainings/02_mh_double_stack/estrie/mask_bin"
+    #e_mask_dir = "/mnt/Data/00_Donnees/01_trainings/02_mh_double_stack/estrie/mask_multi" # Multiclass
+    e_lidar_dir = "/mnt/Data/00_Donnees/01_trainings/02_mh_double_stack/estrie/lidar_mnt"
 
     # Path Kenauk Full (test)
-    k_test_img = "D:/00_Donnees/01_trainings/03_kenauk_test_full/sen2_print"
-    k_test_mask = "D:/00_Donnees/01_trainings/03_kenauk_test_full/mask_bin"
-    k_test_lid = "D:/00_Donnees/01_trainings/03_kenauk_test_full/lidar_mnt"
+    k_test_img = "/mnt/Data/00_Donnees/01_trainings/03_kenauk_test_full/sen2_print"
+    k_test_mask = "/mnt/Data/00_Donnees/01_trainings/03_kenauk_test_full/mask_bin"
+    k_test_lid = "/mnt/Data/00_Donnees/01_trainings/03_kenauk_test_full/lidar_mnt"
 
     train_loader, val_loader, test_loader = get_loaders_kenauk_multi_enco(
     TRAIN_IMG_DIR,

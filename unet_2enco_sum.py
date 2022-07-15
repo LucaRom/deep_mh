@@ -3,7 +3,7 @@ from torch import nn
 from torch.nn import functional as F
 
 
-class UNet_multi(nn.Module):
+class unet_2enco_sum(nn.Module):
     """
     Paper: `U-Net: Convolutional Networks for Biomedical Image Segmentation
     <https://arxiv.org/abs/1505.04597>`_
@@ -76,8 +76,8 @@ class UNet_multi(nn.Module):
             # Two input encoders
             layers = []
 
-            feats = 1024
-            feats = feats * 2
+            
+            feats = features_start*((num_layers - 1)**2)
             for _ in range(num_layers - 1):
                 layers.append(Up(feats, feats // 2, bilinear))
                 feats //= 2
@@ -117,10 +117,11 @@ class UNet_multi(nn.Module):
             yi.append(layer(yi[-1])) # LiDAR
 
         # Up path
-        xi[-1] = torch.cat([xi[-1], yi[-1]], dim=1)
+        #xi[-1] = torch.cat([xi[-1], yi[-1]], dim=1)
+        xi[-1] = xi[-1] + yi[-1]
         #for i, layer in enumerate(self.up[self.num_layers : -1]):
         for i, layer in enumerate(self.up[ : -1]):
-            xi[-1] = layer(xi[-1], xi[-2 - i], yi[-2 - i])
+            xi[-1] = layer(xi[-1], xi[-2 - i])
 
         return self.up[-1](xi[-1])
 
@@ -201,7 +202,7 @@ class Up(nn.Module):
     #     return self.conv(x)
 
     # Two input encoders
-    def forward(self, x1, x2, y2):
+    def forward(self, x1, x2):
         x1 = self.upsample(x1)
 
         # Pad x1 to the size of x2
@@ -211,13 +212,13 @@ class Up(nn.Module):
         x1 = F.pad(x1, [diff_w // 2, diff_w - diff_w // 2, diff_h // 2, diff_h - diff_h // 2])
 
         # Concatenate along the channels axis
-        x = torch.cat([y2, x2, x1], dim=1)
+        x = torch.cat([x2, x1], dim=1)
         return self.conv(x)
 
 def test():
     x = torch.randn((1, 3, 161, 161))
     y = torch.randn((1, 5, 161, 161))
-    model = UNet_multi(
+    model = unet_2enco_sum(
             num_classes=3,
             input_channels=3,
             input_channels_lidar=5,
@@ -235,11 +236,11 @@ def test():
     #preds = model(x)
 
     # Two inputs
-    # preds = model(x, y)
+    preds = model(x, y)
 
     # print(preds.shape, x.shape)
     # assert preds.shape == x.shape
-    # print(preds)
+    print(preds)
     
     #print(model)
 
@@ -248,8 +249,8 @@ if __name__ == "__main__":
     # from torchsummary import summary
     # from torchviz import make_dot, make_dot_from_trace
 
-    import os
-    os.environ["PATH"] += os.pathsep + 'E:/Program Files/Graphviz/bin/'
+    # import os
+    # os.environ["PATH"] += os.pathsep + 'E:/Program Files/Graphviz/bin/'
  
     test()
 
