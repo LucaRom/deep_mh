@@ -2,5 +2,7 @@ __pycache__/
 lightning_logs/
 lightning_logs_backup/
 logs/
+.git_bckps/
 *.png
 *.yaml
+testground.py
