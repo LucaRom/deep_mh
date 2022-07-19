@@ -422,10 +422,11 @@ class KenaukDataset_rasterio2(Dataset):
 # rasterio classe fait juste retourner le path vers l'image et le CRS et les Transforms
 # sont extraits en dehors du dataset
 class estrie_rasterio(Dataset):
-    def __init__(self, image_dir, mask_dir, mnt_dir, transform=None):
+    def __init__(self, image_dir, mask_dir, mnt_dir, classif_mode, transform=None):
         self.image_dir = image_dir
         self.mask_dir = mask_dir
         self.mnt_dir = mnt_dir
+        self.classif_mode = classif_mode
         self.transform = transform
         self.all_img = [x for x in os.listdir(image_dir) if x.endswith(('.tif'))]
 
@@ -450,8 +451,14 @@ class estrie_rasterio(Dataset):
 
     def __getitem__(self, index):
         img_path = os.path.join(self.image_dir, self.images[index])
-        mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2", "mask_bin"))
         mnt_path = os.path.join(self.mnt_dir, self.images[index].replace("sen2", "lidar_mnt"))
+        
+        if self.classif_mode == "bin":
+            mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2", "mask_bin"))
+        elif self.classif_mode == "multiclass":
+            mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2", "multi_label"))
+        else:
+            print("There is somethigng wrong with your mask dataset or paths (dataset.py)")
         
         img_opt = np.array(tiff.imread(img_path), dtype=np.float32)
 
