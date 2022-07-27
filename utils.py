@@ -7,10 +7,10 @@ from torch.utils.data import DataLoader, random_split
 # Define all paths
 # Paths (linux)
 # Paths estrie
-e_img_dir = "/mnt/Data/00_Donnees/01_trainings/02_mh_double_stack/estrie2/sen2"
-e_mask_bin_dir = "/mnt/Data/00_Donnees/01_trainings/02_mh_double_stack/estrie2/mask_bin"
-e_mask_multi_dir = "/mnt/Data/00_Donnees/01_trainings/estrie_mask/multi_label"
-e_lidar_dir = "/mnt/Data/00_Donnees/01_trainings/02_mh_double_stack/estrie2/lidar_mnt"
+e_img_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/sen2"
+e_mask_bin_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/mask_bin"
+e_mask_multi_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/mask_multiclass"
+e_lidar_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/lidar_mnt"
 
 # path kenauk
 k_img_dir= "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/train"

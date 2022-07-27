@@ -456,7 +456,7 @@ class estrie_rasterio(Dataset):
         if self.classif_mode == "bin":
             mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2", "mask_bin"))
         elif self.classif_mode == "multiclass":
-            mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2", "multi_label"))
+            mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2", "mask_multiclass"))
         else:
             print("There is somethigng wrong with your mask dataset or paths (dataset.py)")
         
