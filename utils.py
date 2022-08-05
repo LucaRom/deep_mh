@@ -6,11 +6,11 @@ from torch.utils.data import DataLoader, random_split
 
 # Define all paths
 # Paths (linux)
-# Paths estrie
-e_img_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/sen2"
+# Paths estrie (sen2_ete est le dossier de reference pour le filtre des fichiers selon la taille de ceux-ci)
+e_img_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/"
 e_mask_bin_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/mask_bin"
 e_mask_multi_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/mask_multiclass"
-e_lidar_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/lidar_mnt"
+e_lidar_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/mnt"
 
 # path kenauk
 k_img_dir= "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/train"
@@ -78,8 +78,8 @@ def get_datasets(
         )
 
     elif train_region == "estrie":
-        train_dir = e_img_dir 
-        train_mnt = e_lidar_dir
+        img_train_dir = e_img_dir 
+        mnt_train_dir = e_lidar_dir
 
         # Choosing mask paths by classif mode
         if classif_mode == "bin":
@@ -88,9 +88,9 @@ def get_datasets(
 
             # Initiate dataset
             train_ds = estrie_stack2(
-                image_dir=train_dir,
+                image_dir=img_train_dir,
                 mask_dir=train_maskdir,
-                mnt_dir=train_mnt,
+                mnt_dir=mnt_train_dir,
                 #transform=train_transform
             )
 
@@ -100,10 +100,8 @@ def get_datasets(
 
             # Initiate dataset
             train_ds = estrie_rasterio(
-                image_dir=train_dir,
-                mask_dir=train_maskdir,
-                mnt_dir=train_mnt,
-                classif_mode = classif_mode
+                train_dir=img_train_dir,
+                classif_mode=classif_mode
                 #transform=train_transform
             )
 
