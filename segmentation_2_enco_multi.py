@@ -205,19 +205,27 @@ class SemSegment(LightningModule):
 
     def test_step(self, batch, batch_idx):
         self.trainer.model.eval()
-        x, y, z, img_path = batch
-        x = x.float()   # x
-        y = y.float()   # y 
-        z = z.long()    # y 
+        # x, y, z, img_path = batch
+        # x = x.float()   # x
+        # y = y.float()   # y 
+        # z = z.long()    # y 
 
-        preds = self(x, y)   # predictions
+        #preds = self(x, y)   # predictions
+
+        img, lidar, mask, img_path = batch 
+
+        img = img.float()   # x
+        lidar = lidar.float()
+        mask = mask.long()  # y 
+        preds = self(img, lidar)   # predictions
+
         self.trainer.model.train()
 
-        preds_temp   = np.multiply((preds.sigmoid().cpu() > 0.5),1)
+        preds_temp   = preds.softmax(dim=1).argmax(dim=1).unsqueeze(1)
         preds_recast = preds_temp.type(torch.IntTensor).to(device=device)     
 
-        confmat = ConfusionMatrix(num_classes=2).to(device=device)
-        conf_print = confmat(preds_recast, z)
+        confmat = ConfusionMatrix(num_classes=8).to(device=device)
+        conf_print = confmat(preds_recast, mask)
 
         # mask_loss = mask.float().unsqueeze(1) # Unsqueeze for BCE
 
@@ -253,7 +261,12 @@ class SemSegment(LightningModule):
         # #        print (y_reel)
     
         #return {'test_loss': loss, 'test_preds': preds, 'test_target': y}
-        return {'conf matrice': conf_print, 'preds' : preds, 'x' : x, 'y' : y, 'z' : z, 'img_path' : img_path}
+        
+        return {'conf matrice': conf_print, 'preds' : preds, 'img' : img, 'lidar' : lidar, 'mask' : mask, 'img_path' : img_path}
+        
+        #return {'preds' : preds, 'img_path' : img_path}
+
+
 
     def test_epoch_end(self, outputs):
         # TODO Add logs to test aswell?
@@ -286,11 +299,14 @@ class SemSegment(LightningModule):
             transform_ori = src.transform
             src.close() # Needed?
 
-            ori_input = outputs[x]['x'][0].cpu().numpy()
-            ori_target = outputs[x]['z'][0].cpu().numpy()
+            ori_input = outputs[x]['img'][0].cpu().numpy()
+            ori_target = outputs[x]['mask'][0].cpu().numpy()
             #predict_sig = outputs[sample]['preds'][].cpu().squeeze().sigmoid().numpy()
-            predict_sig = outputs[x]['preds'][0].cpu().squeeze().sigmoid().numpy()
-            predict_sig = np.multiply((predict_sig > 0.5),1)
+            #predict_sig = outputs[x]['preds'][0].cpu().squeeze().sigmoid().numpy()
+            #predict_sig = np.multiply((predict_sig > 0.5),1)
+            #predict_sig = outputs[x]['preds'][0].softmax(dim=1).argmax(dim=1).unsqueeze(1)
+            #predict_sig = outputs[x]['preds'][0].cpu().softmax(dim=1).argmax(dim=0).unsqueeze(0).numpy()
+            predict_sig = outputs[x]['preds'][0].cpu().softmax(dim=1).argmax(dim=0).numpy().astype(np.int32)
 
             # write predict image to file
             tiff_save_path = "lightning_logs/version_{version}/predict_geo_{num}.tif".format(version = self.trainer.logger.version, num = x)
@@ -332,29 +348,29 @@ class SemSegment(LightningModule):
             plt.close(fig)
 
         
-        #plt.imshow(np.transpose(ori_input[[3,2,1],:,:],(1,2,0))*3) # Show source
-        #plt.imshow(predict_sig) # show predicted value
-        #plt.imshow(ori_taget) # show target
+        # plt.imshow(np.transpose(ori_input[[3,2,1],:,:],(1,2,0))*3) # Show source
+        # plt.imshow(predict_sig) # show predicted value
+        # plt.imshow(ori_target) # show target
 
 
-        #plt.show()
+        # plt.show()
 
-        #print("debug")
+        # print("debug")
 
         # for batch in outputs:
         #     for sample in range(len(batch)): 
         #         print(batch)
         #         print(sample)
         #         print("next")
-        #         ori_input = outputs[sample]['x'].cpu().numpy()
-        #         ori_taget = outputs[sample]['y'].cpu().numpy()
+        #         ori_input = outputs[sample]['img'].cpu().numpy()
+        #         ori_taget = outputs[sample]['lidar'].cpu().numpy()
         #         #predict_sig = outputs[sample]['preds'][].cpu().squeeze().sigmoid().numpy()
         #         predict_sig = outputs[sample]['preds'].cpu().squeeze().sigmoid().numpy()
 
-        #unique, counts = np.unique(np.multiply((predict_sig > 0.5),1), return_counts=True)
+        # unique, counts = np.unique(np.multiply((predict_sig > 0.5),1), return_counts=True)
 
-        #print('debug')
-        #print(outputs)
+        # print('debug')
+        # print(outputs)
     
     #     # avg_loss = torch.stack([x['test_loss'] for x in outputs]).detach().mean()
     #     preds = torch.cat([tmp['test_preds'] for tmp in outputs]).detach()
@@ -527,12 +543,12 @@ if __name__ == "__main__":
     PIN_MEMORY = True
     NUM_WORKERS = 6
     BATCH_SIZE = 2
-    num_epochs = 50
+    num_epochs = 1
     optim_main = "sg"  # 'Ad' ou 'sg'
-    lr_main = 0.001
+    lr_main = 0.0001
     num_layers_main = 5
-    input_channel_main = 13
-    input_channel_lidar = 1
+    input_channel_main = 24
+    input_channel_lidar = 6
 
     # Call the loaders
     train_loader, val_loader, test_loader = get_datasets(
