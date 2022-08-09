@@ -76,8 +76,7 @@ class unet_2enco_sum(nn.Module):
             # Two input encoders
             layers = []
 
-            
-            feats = features_start*((num_layers - 1)**2)
+            feats = features_start*(2**(num_layers - 1)) # Last downsample convolution size according to number of layers
             for _ in range(num_layers - 1):
                 layers.append(Up(feats, feats // 2, bilinear))
                 feats //= 2
@@ -242,7 +241,7 @@ def test():
     # assert preds.shape == x.shape
     print(preds)
     
-    #print(model)
+    print(model)
 
 if __name__ == "__main__":
 
@@ -253,6 +252,8 @@ if __name__ == "__main__":
     # os.environ["PATH"] += os.pathsep + 'E:/Program Files/Graphviz/bin/'
  
     test()
+
+    print("debug")
 
     # batch_size = 2
     # num_classes = 5  # one hot
