@@ -515,6 +515,112 @@ class estrie_rasterio(Dataset):
 
         return img_opt, img_lidar, mask, sen2_ete_path
 
+class estrie_rasterio_3_inputs(Dataset):
+    """ 
+        The folder containing 'sen2_ete' is filtered to respect the wanted files shape for training. If this is not the 
+        case, you need to change '/sen2_ete' from the instance variable 'self.images' called in the init phase of the 
+        class.
+
+    """
+    def __init__(self, train_dir, classif_mode, transform=None):
+        self.image_dir = train_dir
+        self.classif_mode = classif_mode
+        self.transform = transform       
+        self.images = [x for x in os.listdir(train_dir + "/sen2_ete") if x.endswith(('.tif'))]
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, index):      
+        # sentinel 2 images
+        sen2_ete_path = os.path.join(self.image_dir, 'sen2_ete', self.images[index])
+        sen2_print_path = os.path.join(self.image_dir, 'sen2_print', self.images[index].replace("ete", "print"))
+
+        # lidar images
+        mnt_path = os.path.join(self.image_dir, 'mnt', self.images[index].replace("sen2_ete", "mnt"))
+        mhc_path = os.path.join(self.image_dir, 'mhc', self.images[index].replace("sen2_ete", "mhc"))
+        slopes_path = os.path.join(self.image_dir, 'pentes', self.images[index].replace("sen2_ete", "pentes"))
+        tpi_path = os.path.join(self.image_dir, 'tpi', self.images[index].replace("sen2_ete", "tpi"))
+        tri_path = os.path.join(self.image_dir, 'tri', self.images[index].replace("sen2_ete", "tri"))
+        twi_path = os.path.join(self.image_dir, 'twi', self.images[index].replace("sen2_ete", "twi"))
+
+        # sentinel-1 images
+        sen1_ete_path = os.path.join(self.image_dir, 'sen1_ete', self.images[index])
+        sen1_print_path = os.path.join(self.image_dir, 'sen1_print', self.images[index].replace("ete", "print"))
+
+
+        if self.classif_mode == "bin":
+            mask_path = os.path.join(self.image_dir, 'mask_bin', self.images[index].replace("sen2_ete", "mask_bin"))
+        elif self.classif_mode == "multiclass":
+            mask_path = os.path.join(self.image_dir, 'mask_multiclass', self.images[index].replace("sen2_ete", "mask_multiclass"))
+        else:
+            print("There is something wrong with your mask dataset or paths (dataset.py)")
+        
+        # normalize the bands
+        # clip the value between [0 - 10000]
+        #TODO function or loop to normalize images instead or repeating
+        # sen2_ete normalization
+        sen2_ete_img = np.array(tiff.imread(sen2_ete_path), dtype=np.float32)
+        sen2_ete_img = np.where(sen2_ete_img < 0, 0, sen2_ete_img)  # clip value under 0
+        sen2_ete_img = np.where(sen2_ete_img > 10000, 10000, sen2_ete_img)  # clip value over 10 000
+        sen2_ete_img = sen2_ete_img/10000 # divide the array by 10000 so all the value are between [0-1]
+
+        # sen2_print normalization
+        sen2_print_img = np.array(tiff.imread(sen2_print_path), dtype=np.float32)
+        sen2_print_img = np.where(sen2_print_img < 0, 0, sen2_print_img)  # clip value under 0
+        sen2_print_img = np.where(sen2_print_img > 10000, 10000, sen2_print_img)  # clip value over 10 000
+        sen2_print_img = sen2_print_img/10000 # divide the array by 10000 so all the value are between [0-1]
+
+        # stack both sentinel 2 images
+        img_opt = np.dstack((sen2_ete_img, sen2_print_img))
+
+        # Lidar images
+        # TODO loop / function to expand_dims
+        img_mnt = np.array(tiff.imread(mnt_path))
+        img_mnt = np.expand_dims(img_mnt, axis=2)
+
+        img_mhc = np.array(tiff.imread(mhc_path))
+        img_mhc = np.expand_dims(img_mhc, axis=2)
+
+        img_slopes = np.array(tiff.imread(slopes_path))
+        img_slopes = np.expand_dims(img_slopes, axis=2)
+
+        img_tpi = np.array(tiff.imread(tpi_path))
+        img_tpi = np.expand_dims(img_tpi, axis=2)
+
+        img_tri = np.array(tiff.imread(tri_path))
+        img_tri = np.expand_dims(img_tri, axis=2)
+
+        img_twi = np.array(tiff.imread(twi_path))
+        img_twi = np.expand_dims(img_twi, axis=2)
+
+        img_lidar = np.dstack((img_mnt, img_mhc, img_slopes, img_tpi, img_tri, img_twi))
+
+        # Sentinel-1 images
+        sen1_ete_img = np.array(tiff.imread(sen1_ete_path), dtype=np.float32)
+        sen1_print_img = np.array(tiff.imread(sen1_print_path), dtype=np.float32)
+
+        img_rad = np.dstack((sen1_ete_img, sen1_print_img)) # stack both sen-1 images
+
+        # Mask images
+        #mask = np.array(tiff.imread(mask_path)) / 255
+        mask = np.array(tiff.imread(mask_path)) 
+        #mask[mask == 255.0] = 1.0
+
+       #print("stop") # Debug breakpoint
+
+        # Cast to tensor for better permute
+        img_opt = torch.from_numpy(img_opt)
+        img_opt = img_opt.permute(2,0,1)
+        img_lidar = torch.from_numpy(img_lidar)
+        img_lidar = img_lidar.permute(2,0,1)
+        mask  = torch.from_numpy(mask)
+        img_rad = torch.from_numpy(img_rad)
+        img_rad = img_rad.permute(2,0,1)
+
+        return img_opt, img_lidar, mask, img_rad, sen2_ete_path
+
+
 if __name__ == "__main__":
 # Import data with custom loader
     TRAIN_IMG_DIR = "D:/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/train"
