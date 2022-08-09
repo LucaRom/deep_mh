@@ -7,10 +7,21 @@ from torch.utils.data import DataLoader, random_split
 # Define all paths
 # Paths (linux)
 # Paths estrie (sen2_ete est le dossier de reference pour le filtre des fichiers selon la taille de ceux-ci)
-e_img_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/"
-e_mask_bin_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/mask_bin"
-e_mask_multi_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/mask_multiclass"
-e_lidar_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/mnt"
+
+# e_img_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/"
+# e_mask_bin_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/mask_bin"
+# e_mask_multi_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/mask_multiclass"
+# e_lidar_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/mnt"
+
+# e_img_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/256/"
+# e_mask_bin_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/256/mask_bin"
+# e_mask_multi_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/256/mask_multiclass"
+# e_lidar_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/256/mnt"
+
+e_img_dir = "/mnt/SN750/00_Donnees_SSD/256/"
+e_mask_bin_dir = "/mnt/SN750/00_Donnees_SSD/256/mask_bin"
+e_mask_multi_dir = "/mnt/SN750/00_Donnees_SSD/256/mask_multiclass"
+e_lidar_dir = "/mnt/SN750/00_Donnees_SSD/256/mnt"
 
 # path kenauk
 k_img_dir= "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/train"
@@ -107,7 +118,7 @@ def get_datasets(
 
         # Creating train, val, test datasets
         if test_region == 'local_split':
-            train_set_size = int(len(train_ds) * 0.90)
+            train_set_size = int(len(train_ds) * 0.80)
             valid_set_size = (len(train_ds) - train_set_size) // 2
             test_set_size =  len(train_ds) - (train_set_size + valid_set_size)
             train_ds, val_ds, test_ds = random_split(train_ds, [train_set_size, valid_set_size, test_set_size])
@@ -120,7 +131,7 @@ def get_datasets(
             mnt_dir=k_test_lid,
             #transform=train_transform
             )
-            train_set_size = int(len(train_ds) * 0.90)
+            train_set_size = int(len(train_ds) * 0.80)
             valid_set_size = (len(train_ds) - train_set_size)
             train_ds, val_ds = random_split(train_ds, [train_set_size, valid_set_size])
             test_ds = test_kenauk_full_ds
@@ -159,152 +170,7 @@ def get_datasets(
     return train_loader, val_loader, test_loader
 
 
-def get_loaders(
-    train_dir,
-    train_maskdir,
-    train_mnt,
-    val_dir,
-    val_maskdir,
-    val_mnt,
-    test_dir,
-    test_maskdir,
-    test_mnt,
-    batch_size,
-    #train_transform,
-    #val_transform,
-    num_workers=1,
-    pin_memory=True,
-):
-
-    train_ds = KenaukDataset_stack(
-        image_dir=train_dir,
-        mask_dir=train_maskdir,
-        mnt_dir=train_mnt,
-        #transform=train_transform
-    )
-
-    train_loader = DataLoader(
-        train_ds,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        shuffle=True,
-    )
-
-    val_ds = KenaukDataset_stack(
-        image_dir=val_dir,
-        mask_dir=val_maskdir,
-        mnt_dir=val_mnt,
-        #transform=val_transform,
-    )
-
-    val_loader = DataLoader(
-        val_ds,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        shuffle=False,
-    )
-
-    # test_ds = KenaukDataset_rasterio(
-    #     image_dir=train_dir,
-    #     mask_dir=train_maskdir,
-    #     mnt_dir=train_mnt,
-    # )
-
-    # test_loader = DataLoader(
-    #     test_ds,
-    #     batch_size=1,
-    #     num_workers=0,
-    #     pin_memory=False,
-    #     shuffle=False,
-    # )
-
-    # Dataset Estrie
-    # Estrie 2 encodeurs binaire
-
-    # train_estrie_ds = estrie_rasterio(
-    #     image_dir=train_dir,
-    #     mask_dir=train_maskdir,
-    #     mnt_dir=train_mnt,
-    #     #transform=train_transform
-    # )
-
-    # Estrie 1 encodeur binaire
-    # train_estrie_ds = estrie_stack(
-    #     image_dir=train_dir,
-    #     mask_dir=train_maskdir,
-    #     mnt_dir=train_mnt,
-    #     #transform=train_transform
-    # )
-
-    # Estrie test datasets 
-    estrie_ds = estrie_stack2(
-        image_dir=test_dir,
-        mask_dir=test_maskdir,
-        mnt_dir=test_mnt,
-        #transform=train_transform
-    )
-
-    test_kenauk_full_ds = KenaukDataset_stack2(
-        image_dir=test_dir,
-        mask_dir=test_maskdir,
-        mnt_dir=test_mnt,
-        #transform=train_transform
-    )
-
-    # TODO Put a conditional value for dataset if a specific path needs to be 
-    # given for validation set aswell
-    # Random split
-    # train_set_size = int(len(train_estrie_ds) * 0.90)
-    # valid_set_size = (len(train_estrie_ds) - train_set_size) // 2
-    # test_set_size =  len(train_estrie_ds) - (train_set_size + valid_set_size)
-    # train_ds, val_ds, test_ds = random_split(train_estrie_ds, [train_set_size, valid_set_size, test_set_size])
-    
-    train_set_size = int(len(estrie_ds) * 0.90)
-    valid_set_size = (len(estrie_ds) - train_set_size) // 2
-    test_set_size =  len(estrie_ds) - (train_set_size + valid_set_size)
-    train_ds, val_ds, test_ds = random_split(estrie_ds, [train_set_size, valid_set_size, test_set_size])
-   
-    test_loader = DataLoader(
-        test_kenauk_full_ds,
-        batch_size=1,
-        num_workers=0,
-        pin_memory=False,
-        shuffle=False,
-    )
-
-
-    # print(train_set_size, valid_set_size, test_set_size)
-
-    # train_loader = DataLoader(
-    #     train_ds,
-    #     batch_size=batch_size,
-    #     num_workers=num_workers,
-    #     pin_memory=pin_memory,
-    #     shuffle=True,
-    # )
-
-    # val_loader = DataLoader(
-    #     val_ds,
-    #     batch_size=batch_size,
-    #     num_workers=num_workers,
-    #     pin_memory=pin_memory,
-    #     shuffle=False,
-    # )
-
-    # # TODO Change input of getloaders() for specific datasets
-    # test_loader = DataLoader(
-    #     test_kenauk_full_ds,
-    #     batch_size=1,
-    #     num_workers=0,
-    #     pin_memory=False,
-    #     shuffle=False,
-    # )
-
-    return train_loader, val_loader, test_loader
-
-# def get_loaders_estrie(
+# def get_loaders(
 #     train_dir,
 #     train_maskdir,
 #     train_mnt,
@@ -321,6 +187,50 @@ def get_loaders(
 #     pin_memory=True,
 # ):
 
+#     train_ds = KenaukDataset_stack(
+#         image_dir=train_dir,
+#         mask_dir=train_maskdir,
+#         mnt_dir=train_mnt,
+#         #transform=train_transform
+#     )
+
+#     train_loader = DataLoader(
+#         train_ds,
+#         batch_size=batch_size,
+#         num_workers=num_workers,
+#         pin_memory=pin_memory,
+#         shuffle=True,
+#     )
+
+#     val_ds = KenaukDataset_stack(
+#         image_dir=val_dir,
+#         mask_dir=val_maskdir,
+#         mnt_dir=val_mnt,
+#         #transform=val_transform,
+#     )
+
+#     val_loader = DataLoader(
+#         val_ds,
+#         batch_size=batch_size,
+#         num_workers=num_workers,
+#         pin_memory=pin_memory,
+#         shuffle=False,
+#     )
+
+#     # test_ds = KenaukDataset_rasterio(
+#     #     image_dir=train_dir,
+#     #     mask_dir=train_maskdir,
+#     #     mnt_dir=train_mnt,
+#     # )
+
+#     # test_loader = DataLoader(
+#     #     test_ds,
+#     #     batch_size=1,
+#     #     num_workers=0,
+#     #     pin_memory=False,
+#     #     shuffle=False,
+#     # )
+
 #     # Dataset Estrie
 #     # Estrie 2 encodeurs binaire
 
@@ -330,6 +240,190 @@ def get_loaders(
 #     #     mnt_dir=train_mnt,
 #     #     #transform=train_transform
 #     # )
+
+#     # Estrie 1 encodeur binaire
+#     # train_estrie_ds = estrie_stack(
+#     #     image_dir=train_dir,
+#     #     mask_dir=train_maskdir,
+#     #     mnt_dir=train_mnt,
+#     #     #transform=train_transform
+#     # )
+
+#     # Estrie test datasets 
+#     estrie_ds = estrie_stack2(
+#         image_dir=test_dir,
+#         mask_dir=test_maskdir,
+#         mnt_dir=test_mnt,
+#         #transform=train_transform
+#     )
+
+#     test_kenauk_full_ds = KenaukDataset_stack2(
+#         image_dir=test_dir,
+#         mask_dir=test_maskdir,
+#         mnt_dir=test_mnt,
+#         #transform=train_transform
+#     )
+
+#     # TODO Put a conditional value for dataset if a specific path needs to be 
+#     # given for validation set aswell
+#     # Random split
+#     # train_set_size = int(len(train_estrie_ds) * 0.90)
+#     # valid_set_size = (len(train_estrie_ds) - train_set_size) // 2
+#     # test_set_size =  len(train_estrie_ds) - (train_set_size + valid_set_size)
+#     # train_ds, val_ds, test_ds = random_split(train_estrie_ds, [train_set_size, valid_set_size, test_set_size])
+    
+#     train_set_size = int(len(estrie_ds) * 0.90)
+#     valid_set_size = (len(estrie_ds) - train_set_size) // 2
+#     test_set_size =  len(estrie_ds) - (train_set_size + valid_set_size)
+#     train_ds, val_ds, test_ds = random_split(estrie_ds, [train_set_size, valid_set_size, test_set_size])
+   
+#     test_loader = DataLoader(
+#         test_kenauk_full_ds,
+#         batch_size=1,
+#         num_workers=0,
+#         pin_memory=False,
+#         shuffle=False,
+#     )
+
+
+#     # print(train_set_size, valid_set_size, test_set_size)
+
+#     # train_loader = DataLoader(
+#     #     train_ds,
+#     #     batch_size=batch_size,
+#     #     num_workers=num_workers,
+#     #     pin_memory=pin_memory,
+#     #     shuffle=True,
+#     # )
+
+#     # val_loader = DataLoader(
+#     #     val_ds,
+#     #     batch_size=batch_size,
+#     #     num_workers=num_workers,
+#     #     pin_memory=pin_memory,
+#     #     shuffle=False,
+#     # )
+
+#     # # TODO Change input of getloaders() for specific datasets
+#     # test_loader = DataLoader(
+#     #     test_kenauk_full_ds,
+#     #     batch_size=1,
+#     #     num_workers=0,
+#     #     pin_memory=False,
+#     #     shuffle=False,
+#     # )
+
+#     return train_loader, val_loader, test_loader
+
+# # def get_loaders_estrie(
+# #     train_dir,
+# #     train_maskdir,
+# #     train_mnt,
+# #     val_dir,
+# #     val_maskdir,
+# #     val_mnt,
+# #     test_dir,
+# #     test_maskdir,
+# #     test_mnt,
+# #     batch_size,
+# #     #train_transform,
+# #     #val_transform,
+# #     num_workers=1,
+# #     pin_memory=True,
+# # ):
+
+# #     # Dataset Estrie
+# #     # Estrie 2 encodeurs binaire
+
+# #     # train_estrie_ds = estrie_rasterio(
+# #     #     image_dir=train_dir,
+# #     #     mask_dir=train_maskdir,
+# #     #     mnt_dir=train_mnt,
+# #     #     #transform=train_transform
+# #     # )
+
+# #     #Estrie 1 encodeur binaire
+# #     train_estrie_ds = estrie_stack2(
+# #         image_dir=train_dir,
+# #         mask_dir=train_maskdir,
+# #         mnt_dir=train_mnt,
+# #         #transform=train_transform
+# #     )
+
+# #     test_kenauk_full_ds = KenaukDataset_stack2(
+# #         image_dir=test_dir,
+# #         mask_dir=test_maskdir,
+# #         mnt_dir=test_mnt,
+# #         #transform=train_transform
+# #     )
+
+# #     # test_estrie_ds = estrie_stack2(
+# #     #     image_dir=train_dir,
+# #     #     mask_dir=train_maskdir,
+# #     #     mnt_dir=train_mnt,
+# #     #     #transform=train_transform
+# #     # )
+
+
+# #     # TODO Put a conditional value for dataset if a specific path needs to be 
+# #     # given for validation set aswell
+# #     # Random split
+# #     train_set_size = int(len(train_estrie_ds) * 0.90)
+# #     valid_set_size = (len(train_estrie_ds) - train_set_size) // 2
+# #     test_set_size =  len(train_estrie_ds) - (train_set_size + valid_set_size)
+# #     train_ds, val_ds, test_ds = random_split(train_estrie_ds, [train_set_size, valid_set_size, test_set_size])
+    
+# #     print(train_set_size, valid_set_size, test_set_size)
+
+# #     train_loader = DataLoader(
+# #         train_ds,
+# #         batch_size=batch_size,
+# #         num_workers=num_workers,
+# #         pin_memory=pin_memory,
+# #         shuffle=True,
+# #     )
+
+# #     val_loader = DataLoader(
+# #         val_ds,
+# #         batch_size=batch_size,
+# #         num_workers=num_workers,
+# #         pin_memory=pin_memory,
+# #         shuffle=False,
+# #     )
+
+# #     # TODO Change input of getloaders() for specific datasets
+# #     # test_loader = DataLoader(
+# #     #     test_kenauk_full_ds,
+# #     #     batch_size=1,
+# #     #     num_workers=0,
+# #     #     pin_memory=False,
+# #     #     shuffle=False,
+# #     # )
+
+# #     test_loader = DataLoader(
+# #         test_ds,
+# #         batch_size=1,
+# #         num_workers=0,
+# #         pin_memory=False,
+# #         shuffle=False,
+# #     )
+
+# #     return train_loader, val_loader, test_loader
+
+# def get_loaders_estrie(
+#     test_region,
+#     train_dir,
+#     train_maskdir,
+#     train_mnt,
+#     test_dir,
+#     test_maskdir,
+#     test_mnt,
+#     batch_size,
+#     #train_transform,
+#     #val_transform,
+#     num_workers=1,
+#     pin_memory=True,
+# ):
 
 #     #Estrie 1 encodeur binaire
 #     train_estrie_ds = estrie_stack2(
@@ -346,22 +440,20 @@ def get_loaders(
 #         #transform=train_transform
 #     )
 
-#     # test_estrie_ds = estrie_stack2(
-#     #     image_dir=train_dir,
-#     #     mask_dir=train_maskdir,
-#     #     mnt_dir=train_mnt,
-#     #     #transform=train_transform
-#     # )
-
-
 #     # TODO Put a conditional value for dataset if a specific path needs to be 
 #     # given for validation set aswell
 #     # Random split
-#     train_set_size = int(len(train_estrie_ds) * 0.90)
-#     valid_set_size = (len(train_estrie_ds) - train_set_size) // 2
-#     test_set_size =  len(train_estrie_ds) - (train_set_size + valid_set_size)
-#     train_ds, val_ds, test_ds = random_split(train_estrie_ds, [train_set_size, valid_set_size, test_set_size])
-    
+#     if test_region == 'split':
+#         train_set_size = int(len(train_estrie_ds) * 0.90)
+#         valid_set_size = (len(train_estrie_ds) - train_set_size) // 2
+#         test_set_size =  len(train_estrie_ds) - (train_set_size + valid_set_size)
+#         train_ds, val_ds, test_ds = random_split(train_estrie_ds, [train_set_size, valid_set_size, test_set_size])
+#     elif test_region == 'kenauk':
+#         train_set_size = int(len(train_estrie_ds) * 0.90)
+#         valid_set_size = (len(train_estrie_ds) - train_set_size)
+#         train_ds, val_ds = random_split(train_estrie_ds, [train_set_size, valid_set_size])
+#         test_ds = test_kenauk_full_ds
+
 #     print(train_set_size, valid_set_size, test_set_size)
 
 #     train_loader = DataLoader(
@@ -380,15 +472,6 @@ def get_loaders(
 #         shuffle=False,
 #     )
 
-#     # TODO Change input of getloaders() for specific datasets
-#     # test_loader = DataLoader(
-#     #     test_kenauk_full_ds,
-#     #     batch_size=1,
-#     #     num_workers=0,
-#     #     pin_memory=False,
-#     #     shuffle=False,
-#     # )
-
 #     test_loader = DataLoader(
 #         test_ds,
 #         batch_size=1,
@@ -399,144 +482,72 @@ def get_loaders(
 
 #     return train_loader, val_loader, test_loader
 
-def get_loaders_estrie(
-    test_region,
-    train_dir,
-    train_maskdir,
-    train_mnt,
-    test_dir,
-    test_maskdir,
-    test_mnt,
-    batch_size,
-    #train_transform,
-    #val_transform,
-    num_workers=1,
-    pin_memory=True,
-):
+# def get_loaders_kenauk_multi_enco(
+#     train_dir,
+#     train_maskdir,
+#     train_mnt,
+#     val_dir,
+#     val_maskdir,
+#     val_mnt,
+#     test_dir,
+#     test_maskdir,
+#     test_mnt,
+#     batch_size,
+#     #train_transform,
+#     #val_transform,
+#     num_workers=1,
+#     pin_memory=True,
+# ):
 
-    #Estrie 1 encodeur binaire
-    train_estrie_ds = estrie_stack2(
-        image_dir=train_dir,
-        mask_dir=train_maskdir,
-        mnt_dir=train_mnt,
-        #transform=train_transform
-    )
+#     # Dataset Kenauk
+#     # 2 encodeur
+#     train_kenauk_ds = KenaukDataset_rasterio(
+#         image_dir=train_dir,
+#         mask_dir=train_maskdir,
+#         mnt_dir=train_mnt,
+#         #transform=train_transform
+#     )
 
-    test_kenauk_full_ds = KenaukDataset_stack2(
-        image_dir=test_dir,
-        mask_dir=test_maskdir,
-        mnt_dir=test_mnt,
-        #transform=train_transform
-    )
+#     val_kenauk_ds = KenaukDataset_rasterio(
+#         image_dir=val_dir,
+#         mask_dir=val_maskdir,
+#         mnt_dir=val_mnt,
+#         #transform=train_transform
+#     )
 
-    # TODO Put a conditional value for dataset if a specific path needs to be 
-    # given for validation set aswell
-    # Random split
-    if test_region == 'split':
-        train_set_size = int(len(train_estrie_ds) * 0.90)
-        valid_set_size = (len(train_estrie_ds) - train_set_size) // 2
-        test_set_size =  len(train_estrie_ds) - (train_set_size + valid_set_size)
-        train_ds, val_ds, test_ds = random_split(train_estrie_ds, [train_set_size, valid_set_size, test_set_size])
-    elif test_region == 'kenauk':
-        train_set_size = int(len(train_estrie_ds) * 0.90)
-        valid_set_size = (len(train_estrie_ds) - train_set_size)
-        train_ds, val_ds = random_split(train_estrie_ds, [train_set_size, valid_set_size])
-        test_ds = test_kenauk_full_ds
+#     test_kenauk_full_ds = KenaukDataset_rasterio(
+#         image_dir=test_dir,
+#         mask_dir=test_maskdir,
+#         mnt_dir=test_mnt,
+#         #transform=train_transform
+#     )
 
-    print(train_set_size, valid_set_size, test_set_size)
+#     train_loader = DataLoader(
+#         train_kenauk_ds,
+#         batch_size=batch_size,
+#         num_workers=num_workers,
+#         pin_memory=pin_memory,
+#         shuffle=True,
+#     )
 
-    train_loader = DataLoader(
-        train_ds,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        shuffle=True,
-    )
+#     val_loader = DataLoader(
+#         val_kenauk_ds,
+#         batch_size=batch_size,
+#         num_workers=num_workers,
+#         pin_memory=pin_memory,
+#         shuffle=False,
+#     )
 
-    val_loader = DataLoader(
-        val_ds,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        shuffle=False,
-    )
+#     #TODO Change input of getloaders() for specific datasets
+#     test_loader = DataLoader(
+#         test_kenauk_full_ds,
+#         batch_size=1,
+#         num_workers=0,
+#         pin_memory=False,
+#         shuffle=False,
+#     )
 
-    test_loader = DataLoader(
-        test_ds,
-        batch_size=1,
-        num_workers=0,
-        pin_memory=False,
-        shuffle=False,
-    )
-
-    return train_loader, val_loader, test_loader
-
-def get_loaders_kenauk_multi_enco(
-    train_dir,
-    train_maskdir,
-    train_mnt,
-    val_dir,
-    val_maskdir,
-    val_mnt,
-    test_dir,
-    test_maskdir,
-    test_mnt,
-    batch_size,
-    #train_transform,
-    #val_transform,
-    num_workers=1,
-    pin_memory=True,
-):
-
-    # Dataset Kenauk
-    # 2 encodeur
-    train_kenauk_ds = KenaukDataset_rasterio(
-        image_dir=train_dir,
-        mask_dir=train_maskdir,
-        mnt_dir=train_mnt,
-        #transform=train_transform
-    )
-
-    val_kenauk_ds = KenaukDataset_rasterio(
-        image_dir=val_dir,
-        mask_dir=val_maskdir,
-        mnt_dir=val_mnt,
-        #transform=train_transform
-    )
-
-    test_kenauk_full_ds = KenaukDataset_rasterio(
-        image_dir=test_dir,
-        mask_dir=test_maskdir,
-        mnt_dir=test_mnt,
-        #transform=train_transform
-    )
-
-    train_loader = DataLoader(
-        train_kenauk_ds,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        shuffle=True,
-    )
-
-    val_loader = DataLoader(
-        val_kenauk_ds,
-        batch_size=batch_size,
-        num_workers=num_workers,
-        pin_memory=pin_memory,
-        shuffle=False,
-    )
-
-    #TODO Change input of getloaders() for specific datasets
-    test_loader = DataLoader(
-        test_kenauk_full_ds,
-        batch_size=1,
-        num_workers=0,
-        pin_memory=False,
-        shuffle=False,
-    )
-
-    return train_loader, val_loader, test_loader
+#     return train_loader, val_loader, test_loader
 
 if __name__ == "__main__":
     #cli_main()
