@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 
 #from pl_bolts.models.vision.unet import UNet
 from unet_2enco_sum import unet_2enco_sum
-from pytorch_lightning.callbacks import Callback, ModelCheckpoint
+from pytorch_lightning.callbacks import Callback, ModelCheckpoint, LearningRateMonitor
 
 # Custom LR
 from utils import get_datasets
@@ -94,6 +94,13 @@ class SemSegment(LightningModule):
         tensorboard.add_text("layers_unet", str(num_layers_main))
         tensorboard.add_text("input_ch", str(input_channel_main))
 
+    # def on_train_epoch_start(self) -> None:
+    #     if len(self.trainer.callbacks[1].lrs['lr-Adam']) == 0:
+    #         current_lr = lr_main
+    #     else:
+    #         current_lr = self.trainer.callbacks[1].lrs['lr-Adam'][-1]
+    #     print(f'The current learning rate is : {current_lr}')
+
     def training_step(self, batch, batch_nb):
         img, lidar, mask, img_path = batch # img_poth only needed in test, but still carried 
                                            # TODO fix with a if "test" in dataset...
@@ -108,11 +115,12 @@ class SemSegment(LightningModule):
         mask_loss = mask.float().unsqueeze(1)
 
         # Train metrics call
-        train_loss = torch.nn.CrossEntropyLoss()(preds, mask)
+        train_loss = torch.nn.CrossEntropyLoss(weight=torch.tensor(class_weights).to(device=device))(preds, mask)
 
         
         mask_loss = mask_loss.type(torch.IntTensor).to(device=device)
-        preds_accu = preds.softmax(dim=1).argmax(dim=1).unsqueeze(1)
+        #preds_accu = preds.softmax(dim=1).argmax(dim=1).unsqueeze(1)
+        preds_accu = preds.argmax(dim=1).unsqueeze(1)
 
 
         train_accu = self.train_accuracy(preds_accu, mask_loss)
@@ -122,9 +130,9 @@ class SemSegment(LightningModule):
         log_dict = {"train_loss": train_loss, "train_accu": train_accu, "train_f1": train_f1}
 
         # Call to log
-        self.log("train_loss", train_loss)
-        self.log("train_f1", train_f1)
-        self.log("train_accu", train_accu, prog_bar=True)
+        self.log("train_loss", train_loss, batch_size=BATCH_SIZE)
+        self.log("train_f1", train_f1, batch_size=BATCH_SIZE)
+        self.log("train_accu", train_accu, prog_bar=True, batch_size=BATCH_SIZE)
 
         #return {"loss": train_loss, "log": log_dict, "progress_bar": log_dict}
         #return {"log": log_dict, "progress_bar": log_dict}
@@ -132,7 +140,22 @@ class SemSegment(LightningModule):
 
     def training_epoch_end(self, outputs):
         avg_loss = torch.stack([x['loss'] for x in outputs]).mean().detach().cpu()
-        self.log('train_loss_avg', avg_loss, prog_bar=True, logger=True, on_epoch=True) 
+        self.log('train_loss_avg', avg_loss, prog_bar=True, logger=True, on_epoch=True, batch_size=BATCH_SIZE) 
+
+        # Print learning rate monitor (maybe debug)
+        if optim_main == 'Ad':
+            if len(self.trainer.callbacks[1].lrs['lr-Adam']) == 0:
+                current_lr = lr_main
+            else:
+                current_lr = self.trainer.callbacks[1].lrs['lr-Adam'][-1]
+            print(f'\nThe current learning rate is : {current_lr}')
+        else:
+            if len(self.trainer.callbacks[1].lrs['lr-SGD']) == 0:
+                current_lr = lr_main
+            else:
+                current_lr = self.trainer.callbacks[1].lrs['lr-SGD'][-1]
+            print(f'\nThe current learning rate is : {current_lr}')
+            #print(self.trainer.callbacks[1].lrs['lr-SGD'][-1])
 
         current_train_time = time.time() - self.new_time
         print("--- %s seconds (one train epoch) ---" % (current_train_time))
@@ -147,8 +170,8 @@ class SemSegment(LightningModule):
         # self.log("epoch_train_accuracy", train_accuracy)
         # self.log("epoch_train_f1", train_f1)
 
-        # # reset all metrics
-        # self.train_accuracy.reset()
+        # reset all metrics
+        # self.train_accu.reset()
         # self.train_f1.reset()
 
     def on_train_end(self):
@@ -172,35 +195,39 @@ class SemSegment(LightningModule):
 
         #mask_loss = mask.float().unsqueeze(1)
         mask_loss = mask.float().unsqueeze(1)
-        preds_loss = preds.argmax(dim=1)
+        #preds_loss = preds.argmax(dim=1)
 
         #loss_val = F.cross_entropy(out, mask, ignore_index=250)
         #loss_val = F.binary_cross_entropy_with_logits(preds, mask_loss)
         #val_loss  = torch.nn.NLLLoss()(preds_sig, mask_loss)
-        val_loss = torch.nn.CrossEntropyLoss()(preds, mask)
+        val_loss = torch.nn.CrossEntropyLoss(weight=torch.tensor(class_weights).to(device=device))(preds, mask)
 
-        preds_accu = preds.softmax(dim=1).argmax(dim=1).unsqueeze(1)
+        #preds_accu = preds.softmax(dim=1).argmax(dim=1).unsqueeze(1)
+        preds_accu = preds.argmax(dim=1).unsqueeze(1)
 
         mask_loss = mask_loss.type(torch.IntTensor).to(device=device)
         val_accu = self.val_accuracy(preds_accu, mask_loss)
         val_f1   = self.val_f1(preds_accu, mask_loss)
 
 
-        self.log("val_loss", val_loss)
-        self.log("val_f1", val_f1)
-        self.log("val_accu", val_accu, prog_bar=True)
+        self.log("val_loss", val_loss, batch_size=BATCH_SIZE)
+        self.log("val_f1", val_f1, batch_size=BATCH_SIZE)
+        self.log("val_accu", val_accu, prog_bar=True, batch_size=BATCH_SIZE)
 
         return {"val_loss": val_loss, "val_acc": val_accu}
 
     def validation_epoch_end(self, outputs):
         loss_val = torch.stack([x["val_loss"] for x in outputs]).mean().detach().cpu()
-        self.log('val_loss_avg', loss_val, on_epoch=True) 
+        #self.log('val_loss_avg', loss_val, on_epoch=True, batch_size=BATCH_SIZE) 
+        self.log('val_loss_avg', loss_val, prog_bar=True, logger=True, on_epoch=True, batch_size=BATCH_SIZE) 
 
-        log_dict = {"val_loss": loss_val}
+        #self.log('train_loss_avg', avg_loss, prog_bar=True, logger=True, on_epoch=True, batch_size=BATCH_SIZE) 
+
+        #log_dict = {"val_loss": loss_val}
 
         #print(self.conf_print)
 
-        return {"log": log_dict, "val_loss": log_dict["val_loss"], "progress_bar": log_dict}
+        #return {"log": log_dict, "val_loss": log_dict["val_loss"], "progress_bar": log_dict}
 
 
     def test_step(self, batch, batch_idx):
@@ -221,7 +248,8 @@ class SemSegment(LightningModule):
 
         self.trainer.model.train()
 
-        preds_temp   = preds.softmax(dim=1).argmax(dim=1).unsqueeze(1)
+        #preds_temp   = preds.softmax(dim=1).argmax(dim=1).unsqueeze(1)
+        preds_temp   = preds.argmax(dim=1).unsqueeze(1)
         preds_recast = preds_temp.type(torch.IntTensor).to(device=device)     
 
         confmat = ConfusionMatrix(num_classes=8).to(device=device)
@@ -306,12 +334,14 @@ class SemSegment(LightningModule):
             #predict_sig = np.multiply((predict_sig > 0.5),1)
             #predict_sig = outputs[x]['preds'][0].softmax(dim=1).argmax(dim=1).unsqueeze(1)
             #predict_sig = outputs[x]['preds'][0].cpu().softmax(dim=1).argmax(dim=0).unsqueeze(0).numpy()
-            predict_sig = outputs[x]['preds'][0].cpu().softmax(dim=1).argmax(dim=0).numpy().astype(np.int32)
+            
+            #predict_sig = outputs[x]['preds'][0].cpu().softmax(dim=0).argmax(dim=0).numpy().astype(np.int32)
+            predict_sig = outputs[x]['preds'][0].cpu().argmax(dim=0).numpy().astype(np.int32)
 
             # write predict image to file
             tiff_save_path = "lightning_logs/version_{version}/predict_geo_{num}.tif".format(version = self.trainer.logger.version, num = x)
             predict_img = rasterio.open(tiff_save_path, 'w', driver='GTiff',
-                            height = 512, width = 512,
+                            height = 256, width = 256,
                             count=1, dtype=str(predict_sig.dtype),
                             crs=sample_crs,
                             transform=transform_ori)
@@ -321,7 +351,8 @@ class SemSegment(LightningModule):
 
             fig = plt.figure()
             plt.subplot(1,3,1)
-            plt.imshow(np.transpose(ori_input[[3,2,1],:,:],(1,2,0))*3)
+            plt.imshow(np.transpose(ori_input[[3,2,1],:,:],(1,2,0))*3) # transpose used here only serve to permute axis 
+                                                                       # and should not flip the image
             plt.title("Input")
             plt.subplot(1,3,2)
             plt.imshow(predict_sig)
@@ -383,11 +414,18 @@ class SemSegment(LightningModule):
 
     def configure_optimizers(self):
         if optim_main == 'Ad':
-            opt = torch.optim.Adam(self.net.parameters(), lr=self.lr)
+            opt = torch.optim.Adam(self.net.parameters(), weight_decay = 0.001, lr=self.lr)
         else:
-            opt = torch.optim.SGD(self.net.parameters(), lr=self.lr)
-        sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=10)
-        return [opt], [sch]
+            opt = torch.optim.SGD(self.net.parameters(), momentum = 0.9, weight_decay = 0.001, lr=self.lr)
+
+        #sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max = 10)
+        #sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.1, mode='min', patience=2, verbose=True)
+        
+        #return [opt], [sch]
+
+        #return {'optimizer': opt, "lr_scheduler" : {'scheduler': sch, 'interval':'epoch', 'frequency': 5, 'monitor': 'val_loss'}}
+        return {'optimizer': opt}
+
 
     # def configure_optimizers(self):
     #     optimizer = torch.optim.Adam(self.net.parameters(), lr=1e-3)
@@ -429,7 +467,7 @@ class MyPrintingCallback(Callback):
 def cli_main():
     #from pl_bolts.datamodules import KittiDataModule
 
-    seed_everything(1234)
+    seed_everything(3322)
 
     # parser = ArgumentParser()
     # # trainer args
@@ -446,56 +484,7 @@ def cli_main():
     model = SemSegment()
     #model = UNet(num_classes=2)
 
-    """ 
-
-    # Sanity check
-    inputs, labels = next(iter(train_loader))
-    #print(inputs, labels)
-
-    #print(img_path, mask_path)
-    
-    print(inputs.shape)
-    print(inputs.squeeze().shape)
-
-    print(type(inputs))
-
-    inputs = torch.squeeze(inputs)
-
-    print(type(inputs))
-
-    print("stop")
-
-    #f, axarr = plt.subplots(3,2, figsize=(15,15))
-    f, axarr = plt.subplots(1,2, figsize=(15,15))
-    #axarr[0].imshow(inputs[:,[3,2,1]][0].numpy().transpose([2, 1, 0])*3)
-    axarr[0].imshow(inputs[[3,2,1],:,:,][0].numpy().transpose()*2)
-    axarr[1].imshow(labels[0])
-    # axarr[0,0].imshow(inputs[:,[3,2,1]][0].permute(1,2,0).numpy()*3)
-    # axarr[0,1].imshow(labels[0])
-    # axarr[1,0].imshow(inputs[:,[3,2,1]][1].permute(1,2,0).numpy()*3)
-    # axarr[1,1].imshow(labels[0])
-    # axarr[2,0].imshow(inputs[:,[3,2,1]][2].permute(1,2,0).numpy()*3)
-    # axarr[2,1].imshow(labels[2])
-    plt.show()
-
-    """
-
-
-    # for i in range(3):
-    #     # plt.subplot(1, 3, i+1)
-    #     # plt.axis('off')
-    #     plt.imshow(labels[i])
-    #     plt.figure(i+1)
-
-    #plt.imshow(inputs[:,[3,2,1]][0].permute(1,2,0).numpy()*3)
-
-    #plt.show()
-
-    # #imgplot=plt.imshow(mask)
-    # for i in range(3):
-    #     return plt.imshow(labels[i])
-    
-    print("stop")
+ 
 
     # train (kitti)
     #F:\00_Donnees_SSD\03_existing_datasets\data_semantics
@@ -510,11 +499,13 @@ def cli_main():
 
     checkpoint_callback = ModelCheckpoint(save_top_k=2, monitor="val_loss", mode="min")
 
+    lr_logger = LearningRateMonitor(logging_interval='step')
+
     # # train (custom)
     start_time = time.time()
     trainer = Trainer(accelerator='gpu', devices=1, 
                       log_every_n_steps=1,
-                      callbacks=[MyPrintingCallback(), checkpoint_callback], 
+                      callbacks=[MyPrintingCallback(), checkpoint_callback, lr_logger], 
                       max_epochs=num_epochs)
     print("--- %s seconds (training) ---" % (time.time() - start_time))
 
@@ -541,14 +532,15 @@ if __name__ == "__main__":
     test_region = "local_split"
     classif_mode = "multiclass"
     PIN_MEMORY = True
-    NUM_WORKERS = 6
-    BATCH_SIZE = 2
-    num_epochs = 1
+    NUM_WORKERS = 8
+    BATCH_SIZE = 6
+    num_epochs = 100
     optim_main = "sg"  # 'Ad' ou 'sg'
-    lr_main = 0.0001
-    num_layers_main = 5
+    lr_main = 0.001
+    num_layers_main = 4
     input_channel_main = 24
     input_channel_lidar = 6
+    input_tile_size = 256 # Check size of output in test_epoch_end
 
     # Call the loaders
     train_loader, val_loader, test_loader = get_datasets(
@@ -562,4 +554,82 @@ if __name__ == "__main__":
     PIN_MEMORY,
     )
 
-    cli_main()
+    class_weights = [73.758, 217.556, 37.451, 2.588, 102.608, 10.877, 4.473, 0.138]
+
+    # Sanity check
+    #inputs, labels = next(iter(train_loader))
+
+    #img, lidar, mask, img_path = next(iter(train_loader))
+
+    #print(inputs, labels)
+
+    #print(img_path, mask_path)
+    
+    #print("stop")
+
+    ## Pour mode debug (une ligne a la fois)
+
+    #plt.figure()
+    #plt.imshow(mask[0])
+    #plt.show()
+
+    #plt.figure()    
+    #plt.imshow(img[:,[3,2,1]][0].numpy().transpose([2, 1, 0])*3)
+    #plt.show()
+
+    #plt.figure()
+    #plt.imshow(lidar[:,[3,2,1]][0].numpy().transpose([2, 1, 0])*3)
+    #plt.show()
+
+    # Fin pour debug
+
+
+    # f, axarr = plt.subplots(3,2, figsize=(15,15))
+    # f, axarr = plt.subplots(1,2, figsize=(15,15))
+    # axarr[0].imshow(inputs[:,[3,2,1]][0].numpy().transpose([2, 1, 0])*3)
+    # #axarr[0].imshow(inputs[[3,2,1],:,:,][0].numpy().transpose()*2)
+    # axarr[1].imshow(labels[0])
+
+    # fig = plt.figure()
+    # plt.subplot(1,3,1)
+    # plt.imshow(img[:,[3,2,1]][0].numpy().transpose([2, 1, 0])*3)
+
+    # plt.imshow(lidar[:,[3,2,1]][0].numpy().transpose([2, 1, 0])*3)
+
+    # plt.title("Input")
+    # plt.subplot(1,3,2)
+    # plt.imshow(predict_sig)
+    # plt.title("Predict")
+    # plt.subplot(1,3,3)
+    # plt.figure().imshow(mask[0])
+    # plt.imshow(mask[0])
+    # plt.title("Target")
+
+    # axarr[0].imshow(img[[3,2,1],:,:,][0].numpy().transpose()*2)
+    # axarr[1].imshow(mask[0])
+
+    # axarr[0,0].imshow(inputs[:,[3,2,1]][0].permute(1,2,0).numpy()*3)
+    # axarr[0,1].imshow(labels[0])
+    # axarr[1,0].imshow(inputs[:,[3,2,1]][1].permute(1,2,0).numpy()*3)
+    # axarr[1,1].imshow(labels[0])
+    # axarr[2,0].imshow(inputs[:,[3,2,1]][2].permute(1,2,0).numpy()*3)
+    # axarr[2,1].imshow(labels[2])
+    # plt.show()
+
+    # for i in range(3):
+    #     # plt.subplot(1, 3, i+1)
+    #     # plt.axis('off')
+    #     plt.imshow(labels[i])
+    #     plt.figure(i+1)
+
+    #plt.imshow(inputs[:,[3,2,1]][0].permute(1,2,0).numpy()*3)
+
+    #plt.show()
+
+    # #imgplot=plt.imshow(mask)
+    # for i in range(3):
+    #     return plt.imshow(labels[i])
+    
+    #print("stop")
+
+    cli_main() # Main function
