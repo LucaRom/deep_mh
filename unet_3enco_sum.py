@@ -78,7 +78,7 @@ class unet_3enco_sum(nn.Module):
             layers = []
 
             
-            feats = features_start*((num_layers - 1)**2)
+            feats = features_start*(2**(num_layers - 1)) 
             for _ in range(num_layers - 1):
                 layers.append(Up(feats, feats // 2, bilinear))
                 feats //= 2
