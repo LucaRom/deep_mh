@@ -1,7 +1,7 @@
 import torch
 #import torchvision
 #import wandb
-from dataset import KenaukDataset, KenaukDataset_rasterio, estrie_rasterio, estrie_stack, KenaukDataset_stack, KenaukDataset_stack2, estrie_stack2
+from dataset import KenaukDataset, KenaukDataset_rasterio, estrie_rasterio, estrie_stack, KenaukDataset_stack, KenaukDataset_stack2, estrie_stack2, estrie_rasterio_3_inputs
 from torch.utils.data import DataLoader, random_split
 
 # Define all paths
@@ -18,10 +18,17 @@ from torch.utils.data import DataLoader, random_split
 # e_mask_multi_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/256/mask_multiclass"
 # e_lidar_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/256/mnt"
 
-e_img_dir = "/mnt/SN750/00_Donnees_SSD/256/"
-e_mask_bin_dir = "/mnt/SN750/00_Donnees_SSD/256/mask_bin"
-e_mask_multi_dir = "/mnt/SN750/00_Donnees_SSD/256/mask_multiclass"
-e_lidar_dir = "/mnt/SN750/00_Donnees_SSD/256/mnt"
+# 256
+# e_img_dir = "/mnt/SN750/00_Donnees_SSD/256/"
+# e_mask_bin_dir = "/mnt/SN750/00_Donnees_SSD/256/mask_bin"
+# e_mask_multi_dir = "/mnt/SN750/00_Donnees_SSD/256/mask_multiclass"
+# e_lidar_dir = "/mnt/SN750/00_Donnees_SSD/256/mnt"
+
+# 256 overlap
+e_img_dir = "/mnt/SN750/00_Donnees_SSD/256_over50p/"
+e_mask_bin_dir = "/mnt/SN750/00_Donnees_SSD/256_over50p/mask_bin"
+e_mask_multi_dir = "/mnt/SN750/00_Donnees_SSD/256_over50p/mask_multiclass"
+e_lidar_dir = "/mnt/SN750/00_Donnees_SSD/256_over50p/mnt"
 
 # path kenauk
 k_img_dir= "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/train"
@@ -109,8 +116,16 @@ def get_datasets(
             print("Using training paths from Estrie for a multi-class classification")
             train_maskdir = e_mask_multi_dir
 
+            # # Initiate dataset
+            # train_ds = estrie_rasterio(
+            #     train_dir=img_train_dir,
+            #     classif_mode=classif_mode
+            #     #transform=train_transform
+            # )
+
+            # TODO make selectable datasets in options (ex. : stack, sen2, sen 2 + sen 1, sen2 + lidar, etc.)
             # Initiate dataset
-            train_ds = estrie_rasterio(
+            train_ds = estrie_rasterio_3_inputs(
                 train_dir=img_train_dir,
                 classif_mode=classif_mode
                 #transform=train_transform
