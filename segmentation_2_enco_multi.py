@@ -191,6 +191,7 @@ class SemSegment(LightningModule):
         img = img.float()   # x
         lidar = lidar.float()
         mask = mask.long()  # y 
+
         preds = self(img, lidar)   # predictions
 
         #confmat = ConfusionMatrix(num_classes=2).to(device=device)
@@ -249,6 +250,7 @@ class SemSegment(LightningModule):
         img = img.float()   # x
         lidar = lidar.float()
         mask = mask.long()  # y 
+        
         preds = self(img, lidar)   # predictions
 
         self.trainer.model.train()
@@ -346,7 +348,7 @@ class SemSegment(LightningModule):
             # write predict image to file
             tiff_save_path = "lightning_logs/version_{version}/predict_geo_{num}.tif".format(version = self.trainer.logger.version, num = x)
             predict_img = rasterio.open(tiff_save_path, 'w', driver='GTiff',
-                            height = 256, width = 256,
+                            height = input_tile_size, width = input_tile_size,
                             count=1, dtype=str(predict_sig.dtype),
                             crs=sample_crs,
                             transform=transform_ori)
@@ -537,10 +539,10 @@ if __name__ == "__main__":
     train_region = "estrie"
     test_region = "local_split"
     classif_mode = "multiclass"
-    PIN_MEMORY = True
+    PIN_MEMORY = False
     NUM_WORKERS = 8
     BATCH_SIZE = 8
-    num_epochs = 100
+    num_epochs = 10
     optim_main = "sg"  # 'Ad' ou 'sg'
     lr_main = 0.001
     num_layers_main = 4
@@ -638,4 +640,5 @@ if __name__ == "__main__":
     
     #print("stop")
 
+    #torch.set_num_threads(NUM_WORKERS)
     cli_main() # Main function
