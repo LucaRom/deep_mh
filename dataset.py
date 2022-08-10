@@ -499,10 +499,20 @@ class estrie_rasterio(Dataset):
 
         img_lidar = np.dstack((img_mnt, img_mhc, img_slopes, img_tpi, img_tri, img_twi))
 
+        if img_lidar.dtype != 'float32':
+            img_lidar = np.float32(img_lidar) # Only for overlapping dataset #TODO
+        else:
+            pass
+
         # Mask images
         #mask = np.array(tiff.imread(mask_path)) / 255
-        mask = np.array(tiff.imread(mask_path)) 
+        mask = np.array(tiff.imread(mask_path))
         #mask[mask == 255.0] = 1.0
+
+        if mask.dtype != 'float32':
+            mask = np.float32(mask) # Only for overlapping dataset #TODO
+        else:
+            pass
 
        #print("stop") # Debug breakpoint
 
@@ -545,8 +555,8 @@ class estrie_rasterio_3_inputs(Dataset):
         twi_path = os.path.join(self.image_dir, 'twi', self.images[index].replace("sen2_ete", "twi"))
 
         # sentinel-1 images
-        sen1_ete_path = os.path.join(self.image_dir, 'sen1_ete', self.images[index])
-        sen1_print_path = os.path.join(self.image_dir, 'sen1_print', self.images[index].replace("ete", "print"))
+        sen1_ete_path = os.path.join(self.image_dir, 'sen1_ete', self.images[index]).replace("sen2_ete", "sen1_ete")
+        sen1_print_path = os.path.join(self.image_dir, 'sen1_print', self.images[index].replace("sen2_ete", "sen1_print"))
 
 
         if self.classif_mode == "bin":
@@ -596,6 +606,11 @@ class estrie_rasterio_3_inputs(Dataset):
 
         img_lidar = np.dstack((img_mnt, img_mhc, img_slopes, img_tpi, img_tri, img_twi))
 
+        if img_lidar.dtype != 'float32':
+            img_lidar = np.float32(img_lidar) # Only for overlapping dataset #TODO
+        else:
+            pass
+
         # Sentinel-1 images
         sen1_ete_img = np.array(tiff.imread(sen1_ete_path), dtype=np.float32)
         sen1_print_img = np.array(tiff.imread(sen1_print_path), dtype=np.float32)
@@ -606,6 +621,11 @@ class estrie_rasterio_3_inputs(Dataset):
         #mask = np.array(tiff.imread(mask_path)) / 255
         mask = np.array(tiff.imread(mask_path)) 
         #mask[mask == 255.0] = 1.0
+
+        if mask.dtype != 'float32':
+            mask = np.float32(mask) # Only for overlapping dataset #TODO
+        else:
+            pass
 
        #print("stop") # Debug breakpoint
 
