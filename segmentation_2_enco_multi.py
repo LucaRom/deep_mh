@@ -21,6 +21,9 @@ from pytorch_lightning.callbacks import Callback, ModelCheckpoint, LearningRateM
 # Custom LR
 from utils import get_datasets
 
+# Custom loss
+from custom_loss import FocalLoss
+
 # Add to specified some tensor to GPU
 device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -115,7 +118,8 @@ class SemSegment(LightningModule):
         mask_loss = mask.float().unsqueeze(1)
 
         # Train metrics call
-        train_loss = torch.nn.CrossEntropyLoss(weight=torch.tensor(class_weights).to(device=device))(preds, mask)
+        #train_loss = torch.nn.CrossEntropyLoss(weight=torch.tensor(class_weights).to(device=device))(preds, mask)
+        train_loss = FocalLoss()(preds, mask)
 
         
         mask_loss = mask_loss.type(torch.IntTensor).to(device=device)
@@ -143,19 +147,19 @@ class SemSegment(LightningModule):
         self.log('train_loss_avg', avg_loss, prog_bar=True, logger=True, on_epoch=True, batch_size=BATCH_SIZE) 
 
         # Print learning rate monitor (maybe debug)
-        if optim_main == 'Ad':
-            if len(self.trainer.callbacks[1].lrs['lr-Adam']) == 0:
-                current_lr = lr_main
-            else:
-                current_lr = self.trainer.callbacks[1].lrs['lr-Adam'][-1]
-            print(f'\nThe current learning rate is : {current_lr}')
-        else:
-            if len(self.trainer.callbacks[1].lrs['lr-SGD']) == 0:
-                current_lr = lr_main
-            else:
-                current_lr = self.trainer.callbacks[1].lrs['lr-SGD'][-1]
-            print(f'\nThe current learning rate is : {current_lr}')
-            #print(self.trainer.callbacks[1].lrs['lr-SGD'][-1])
+        # if optim_main == 'Ad':
+        #     if len(self.trainer.callbacks[1].lrs['lr-Adam']) == 0:
+        #         current_lr = lr_main
+        #     else:
+        #         current_lr = self.trainer.callbacks[1].lrs['lr-Adam'][-1]
+        #     print(f'\nThe current learning rate is : {current_lr}')
+        # else:
+        #     if len(self.trainer.callbacks[1].lrs['lr-SGD']) == 0:
+        #         current_lr = lr_main
+        #     else:
+        #         current_lr = self.trainer.callbacks[1].lrs['lr-SGD'][-1]
+        #     print(f'\nThe current learning rate is : {current_lr}')
+        #     #print(self.trainer.callbacks[1].lrs['lr-SGD'][-1])
 
         current_train_time = time.time() - self.new_time
         print("--- %s seconds (one train epoch) ---" % (current_train_time))
@@ -200,7 +204,8 @@ class SemSegment(LightningModule):
         #loss_val = F.cross_entropy(out, mask, ignore_index=250)
         #loss_val = F.binary_cross_entropy_with_logits(preds, mask_loss)
         #val_loss  = torch.nn.NLLLoss()(preds_sig, mask_loss)
-        val_loss = torch.nn.CrossEntropyLoss(weight=torch.tensor(class_weights).to(device=device))(preds, mask)
+        #val_loss = torch.nn.CrossEntropyLoss(weight=torch.tensor(class_weights).to(device=device))(preds, mask)
+        val_loss = FocalLoss()(preds, mask)
 
         #preds_accu = preds.softmax(dim=1).argmax(dim=1).unsqueeze(1)
         preds_accu = preds.argmax(dim=1).unsqueeze(1)
@@ -419,12 +424,12 @@ class SemSegment(LightningModule):
             opt = torch.optim.SGD(self.net.parameters(), momentum = 0.9, weight_decay = 0.001, lr=self.lr)
 
         #sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max = 10)
-        #sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.1, mode='min', patience=2, verbose=True)
+        sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.95, mode='min', patience=3, verbose=True)
         
         #return [opt], [sch]
 
-        #return {'optimizer': opt, "lr_scheduler" : {'scheduler': sch, 'interval':'epoch', 'frequency': 5, 'monitor': 'val_loss'}}
-        return {'optimizer': opt}
+        return {'optimizer': opt, "lr_scheduler" : {'scheduler': sch, 'interval':'epoch', 'frequency': 1, 'monitor': 'val_loss'}}
+        #return {'optimizer': opt}
 
 
     # def configure_optimizers(self):
@@ -459,10 +464,10 @@ class SemSegment(LightningModule):
 
     #     return parser
 
-class MyPrintingCallback(Callback):
-    def on_train_end(self, trainer, pl_module):
-        #print('do something when training ends')
-        print("End of training")
+# class MyPrintingCallback(Callback):
+#     def on_train_end(self, trainer, pl_module):
+#         #print('do something when training ends')
+#         print("End of training")
 
 def cli_main():
     #from pl_bolts.datamodules import KittiDataModule
@@ -505,7 +510,8 @@ def cli_main():
     start_time = time.time()
     trainer = Trainer(accelerator='gpu', devices=1, 
                       log_every_n_steps=1,
-                      callbacks=[MyPrintingCallback(), checkpoint_callback, lr_logger], 
+                      #callbacks=[MyPrintingCallback(), checkpoint_callback, lr_logger], 
+                      callbacks=[checkpoint_callback, lr_logger], 
                       max_epochs=num_epochs)
     print("--- %s seconds (training) ---" % (time.time() - start_time))
 
@@ -533,7 +539,7 @@ if __name__ == "__main__":
     classif_mode = "multiclass"
     PIN_MEMORY = True
     NUM_WORKERS = 8
-    BATCH_SIZE = 6
+    BATCH_SIZE = 8
     num_epochs = 100
     optim_main = "sg"  # 'Ad' ou 'sg'
     lr_main = 0.001
