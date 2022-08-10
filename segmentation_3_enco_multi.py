@@ -21,6 +21,9 @@ from pytorch_lightning.callbacks import Callback, ModelCheckpoint, LearningRateM
 # Custom LR
 from utils import get_datasets
 
+# Custom loss
+from custom_loss import FocalLoss
+
 # Add to specified some tensor to GPU
 device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
 
@@ -119,11 +122,11 @@ class SemSegment(LightningModule):
         mask_loss = mask.float().unsqueeze(1)
 
         # Train metrics call
-        train_loss = torch.nn.CrossEntropyLoss()(preds, mask)
-
+        #train_loss = torch.nn.CrossEntropyLoss()(preds, mask)
+        train_loss = FocalLoss()(preds, mask)
         
         mask_loss = mask_loss.type(torch.IntTensor).to(device=device)
-        preds_accu = preds.softmax(dim=1).argmax(dim=1).unsqueeze(1)
+        preds_accu = preds.argmax(dim=1).unsqueeze(1)
 
 
         train_accu = self.train_accuracy(preds_accu, mask_loss)
@@ -145,12 +148,12 @@ class SemSegment(LightningModule):
         avg_loss = torch.stack([x['loss'] for x in outputs]).mean().detach().cpu()
         self.log('train_loss_avg', avg_loss, prog_bar=True, logger=True, on_epoch=True, batch_size=BATCH_SIZE) 
 
-        # Print learning rate monitor (maybe debug)
-        if len(self.trainer.callbacks[1].lrs['lr-Adam']) == 0:
-            current_lr = lr_main
-        else:
-            current_lr = self.trainer.callbacks[1].lrs['lr-Adam'][-1]
-        print(f'The current learning rate is : {current_lr}')
+        # # Print learning rate monitor (maybe debug)
+        # if len(self.trainer.callbacks[1].lrs['lr-Adam']) == 0:
+        #     current_lr = lr_main
+        # else:
+        #     current_lr = self.trainer.callbacks[1].lrs['lr-Adam'][-1]
+        # print(f'The current learning rate is : {current_lr}')
 
         current_train_time = time.time() - self.new_time
         print("--- %s seconds (one train epoch) ---" % (current_train_time))
@@ -178,7 +181,7 @@ class SemSegment(LightningModule):
         # mask = mask.long()
         # out = self(img)
 
-        img, lidar, mask, img_path = batch  #img_path only needed in test
+        img, lidar, mask, radar, img_path = batch  #img_path only needed in test
         img = img.float()   # x
         lidar = lidar.float()
         mask = mask.long()  # y
@@ -197,9 +200,10 @@ class SemSegment(LightningModule):
         #loss_val = F.cross_entropy(out, mask, ignore_index=250)
         #loss_val = F.binary_cross_entropy_with_logits(preds, mask_loss)
         #val_loss  = torch.nn.NLLLoss()(preds_sig, mask_loss)
-        val_loss = torch.nn.CrossEntropyLoss()(preds, mask)
+        #val_loss = torch.nn.CrossEntropyLoss()(preds, mask)
+        val_loss = FocalLoss()(preds, mask)
 
-        preds_accu = preds.softmax(dim=1).argmax(dim=1).unsqueeze(1)
+        preds_accu = preds.argmax(dim=1).unsqueeze(1)
 
         mask_loss = mask_loss.type(torch.IntTensor).to(device=device)
         val_accu = self.val_accuracy(preds_accu, mask_loss)
@@ -214,13 +218,15 @@ class SemSegment(LightningModule):
 
     def validation_epoch_end(self, outputs):
         loss_val = torch.stack([x["val_loss"] for x in outputs]).mean().detach().cpu()
-        self.log('val_loss_avg', loss_val, on_epoch=True, batch_size=BATCH_SIZE) 
+        #self.log('val_loss_avg', loss_val, on_epoch=True, batch_size=BATCH_SIZE)
+        self.log('val_loss_avg', loss_val, prog_bar=True, logger=True, on_epoch=True, batch_size=BATCH_SIZE) 
 
-        log_dict = {"val_loss": loss_val}
+
+        #log_dict = {"val_loss": loss_val}
 
         #print(self.conf_print)
 
-        return {"log": log_dict, "val_loss": log_dict["val_loss"], "progress_bar": log_dict}
+        #return {"log": log_dict, "val_loss": log_dict["val_loss"], "progress_bar": log_dict}
 
 
     def test_step(self, batch, batch_idx):
@@ -237,11 +243,13 @@ class SemSegment(LightningModule):
         img = img.float()   # x
         lidar = lidar.float()
         mask = mask.long()  # y 
-        preds = self(img, lidar)   # predictions
+        radar = radar.float() # z
+
+        preds = self(img, lidar, radar)   # predictions
 
         self.trainer.model.train()
 
-        preds_temp   = preds.softmax(dim=1).argmax(dim=1).unsqueeze(1)
+        preds_temp   = preds.argmax(dim=1).unsqueeze(1)
         preds_recast = preds_temp.type(torch.IntTensor).to(device=device)     
 
         confmat = ConfusionMatrix(num_classes=8).to(device=device)
@@ -282,7 +290,7 @@ class SemSegment(LightningModule):
     
         #return {'test_loss': loss, 'test_preds': preds, 'test_target': y}
         
-        return {'conf matrice': conf_print, 'preds' : preds, 'img' : img, 'lidar' : lidar, 'mask' : mask, 'img_path' : img_path}
+        return {'conf matrice': conf_print, 'preds' : preds, 'img' : img, 'lidar' : lidar, 'mask' : mask, 'radar' : radar, 'img_path' : img_path}
         
         #return {'preds' : preds, 'img_path' : img_path}
 
@@ -310,6 +318,7 @@ class SemSegment(LightningModule):
             disp = ConfusionMatrixDisplay(confusion_matrix=cm)
             disp.plot()
             plt.savefig("lightning_logs/version_{version}/cm_{num}.png".format(version = self.trainer.logger.version, num = x))
+            #plt.savefig("lightning_logs/version_{version}/predict_geo_{num}.tif".format(version = log_version, num = x))
             plt.close(fig)
 
             # Extract CRS and transforms
@@ -326,12 +335,14 @@ class SemSegment(LightningModule):
             #predict_sig = np.multiply((predict_sig > 0.5),1)
             #predict_sig = outputs[x]['preds'][0].softmax(dim=1).argmax(dim=1).unsqueeze(1)
             #predict_sig = outputs[x]['preds'][0].cpu().softmax(dim=1).argmax(dim=0).unsqueeze(0).numpy()
-            predict_sig = outputs[x]['preds'][0].cpu().softmax(dim=1).argmax(dim=0).numpy().astype(np.int32)
+            predict_sig = outputs[x]['preds'][0].cpu().argmax(dim=0).numpy().astype(np.int32)
 
             # write predict image to file
             tiff_save_path = "lightning_logs/version_{version}/predict_geo_{num}.tif".format(version = self.trainer.logger.version, num = x)
+            #tiff_save_path = "lightning_logs/version_{version}/predict_geo_{num}.tif".format(version = log_version, num = x)
+
             predict_img = rasterio.open(tiff_save_path, 'w', driver='GTiff',
-                            height = 512, width = 512,
+                            height = input_tile_size, width = input_tile_size,
                             count=1, dtype=str(predict_sig.dtype),
                             crs=sample_crs,
                             transform=transform_ori)
@@ -365,6 +376,7 @@ class SemSegment(LightningModule):
             # plt.title("Confusion Matrix")
 
             plt.savefig("lightning_logs/version_{version}/fig_{num}.png".format(version = self.trainer.logger.version, num = x))
+            #plt.savefig("lightning_logs/version_{version}/predict_geo_{num}.tif".format(version = log_version, num = x))
             plt.close(fig)
 
         
@@ -403,16 +415,17 @@ class SemSegment(LightningModule):
 
     def configure_optimizers(self):
         if optim_main == 'Ad':
-            opt = torch.optim.Adam(self.net.parameters(), lr=self.lr)
+            opt = torch.optim.Adam(self.net.parameters(), weight_decay = 0.001, lr=self.lr)
         else:
-            opt = torch.optim.SGD(self.net.parameters(), lr=self.lr)
+            opt = torch.optim.SGD(self.net.parameters(), momentum = 0.9, weight_decay = 0.001, lr=self.lr)
 
-        sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=10)
+        #sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max = 10)
+        sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.95, mode='min', patience=3, verbose=True)
         
         #return [opt], [sch]
 
-        return {'optimizer': opt, "lr_scheduler" : {'scheduler': sch, 'interval':'epoch', 'frequency': 5, 'monitor': 'val_loss'}}
-
+        return {'optimizer': opt, "lr_scheduler" : {'scheduler': sch, 'interval':'epoch', 'frequency': 1, 'monitor': 'val_loss'}}
+        #return {'optimizer': opt}
 
     # def configure_optimizers(self):
     #     optimizer = torch.optim.Adam(self.net.parameters(), lr=1e-3)
@@ -454,7 +467,7 @@ class MyPrintingCallback(Callback):
 def cli_main():
     #from pl_bolts.datamodules import KittiDataModule
 
-    seed_everything(1234)
+    seed_everything(1234, workers=True)
 
     # parser = ArgumentParser()
     # # trainer args
@@ -520,7 +533,7 @@ def cli_main():
     # for i in range(3):
     #     return plt.imshow(labels[i])
     
-    print("stop")
+    #print("stop")
 
     # train (kitti)
     #F:\00_Donnees_SSD\03_existing_datasets\data_semantics
@@ -541,7 +554,7 @@ def cli_main():
     start_time = time.time()
     trainer = Trainer(accelerator='gpu', devices=1, 
                       log_every_n_steps=1,
-                      callbacks=[MyPrintingCallback(), checkpoint_callback, lr_logger], 
+                      callbacks=[checkpoint_callback, lr_logger], 
                       max_epochs=num_epochs)
     print("--- %s seconds (training) ---" % (time.time() - start_time))
 
@@ -553,6 +566,22 @@ def cli_main():
     
     trainer.test(model, test_loader) # TODO
     print("--- %s seconds (After test) ---" % (time.time() - start_time))
+
+
+def evaluate_test_solo(ckpt_path, log_version):
+    model = SemSegment.load_from_checkpoint(
+    checkpoint_path=ckpt_path,
+    #hparams_file="/path/to/experiment/version/hparams.yaml",
+    #map_location=None,
+    )
+
+    #checkpoint_callback = ModelCheckpoint(save_top_k=2, monitor="val_loss", mode="min")
+    #lr_logger = LearningRateMonitor(logging_interval='step')
+
+    trainer = Trainer(accelerator='gpu', devices=1)
+
+    trainer.test(model, dataloaders=test_loader)
+    
 
     #debug
     #print("stop")
@@ -570,13 +599,14 @@ if __name__ == "__main__":
     PIN_MEMORY = True
     NUM_WORKERS = 8
     BATCH_SIZE = 6
-    num_epochs = 100
-    optim_main = "Ad"  # 'Ad' ou 'sg'
+    num_epochs = 25
+    optim_main = "sg"  # 'Ad' ou 'sg'
     lr_main = 0.001
-    num_layers_main = 5
+    num_layers_main = 4
     input_channel_main = 24
     input_channel_lidar = 6
     input_channel_radar = 6
+    input_tile_size = 256 # Check size of output in test_epoch_end
 
     # Call the loaders
     train_loader, val_loader, test_loader = get_datasets(
@@ -590,4 +620,10 @@ if __name__ == "__main__":
     PIN_MEMORY,
     )
 
+    # Training + test (main function)
     cli_main()
+
+    # Evaluate #TODO automatiser les paths
+    # ckpt_path = "/mnt/Data/01_Codes/00_Github/Unet_lightning/lightning_logs/version_133/checkpoints/epoch=21-step=20856.ckpt"
+    # log_version = 133
+    # evaluate_test_solo(ckpt_path, log_version)
