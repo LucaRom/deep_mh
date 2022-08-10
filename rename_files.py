@@ -3,10 +3,10 @@
 import os
  
 # Give the folder path 
-folder = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/512/mask_multiclass"
+folder = "/mnt/SN750/00_Donnees_SSD/256_over50p/twi"
 
 #list des fichiers
-print(os.listdir(folder))
+#print(os.listdir(folder))
 
 # for count, filename in enumerate(os.listdir(folder)):
 #     src = f"{folder}/{filename}"
@@ -16,10 +16,22 @@ print(os.listdir(folder))
 #     #os.rename(src, new_name)
 
 # Renaming part of files
-for count, filename in enumerate(os.listdir(folder)):
-    src = f"{folder}/{filename}"
-    new_filename = filename.replace("multi_label", "mask_multiclass")
-    new_name =f"{folder}/{new_filename}"
+#for count, filename in enumerate(os.listdir(folder)):
+#    src = f"{folder}/{filename}"
+#    new_filename = filename.replace("multi_label", "mask_multiclass")
+#    new_name =f"{folder}/{new_filename}"
 
-    #print("old name : ", src, " New name : ", new_name)
-    os.rename(src, new_name)
+#    #print("old name : ", src, " New name : ", new_name)
+#    os.rename(src, new_name)
+
+# Rename entire file
+# for num, file in os.listdir(folder):
+#     os.rename(file, "mask_bin." + num)
+
+for num, file in enumerate(sorted(os.listdir(folder))):
+    ori_file = os.path.join(folder, file)
+    new_file = os.path.join(folder, "twi." + str(num) + ".tif")
+
+    print(ori_file, new_file)
+
+    os.rename(ori_file, new_file)
