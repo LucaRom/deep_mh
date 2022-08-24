@@ -1,7 +1,7 @@
 import torch
 #import torchvision
 #import wandb
-from dataset import KenaukDataset, KenaukDataset_rasterio, estrie_rasterio, estrie_stack, KenaukDataset_stack, KenaukDataset_stack2, estrie_stack2, estrie_rasterio_3_inputs
+from dataset import KenaukDataset, KenaukDataset_rasterio, estrie_rasterio, estrie_stack, KenaukDataset_stack, KenaukDataset_stack2, estrie_stack2, estrie_rasterio_3_inputs, kenauk_rasterio_3_inputs
 from torch.utils.data import DataLoader, random_split
 
 # Define all paths
@@ -24,25 +24,30 @@ from torch.utils.data import DataLoader, random_split
 # e_mask_multi_dir = "/mnt/SN750/00_Donnees_SSD/256/mask_multiclass"
 # e_lidar_dir = "/mnt/SN750/00_Donnees_SSD/256/mnt"
 
-# 256 overlap
+# Estrie 256 overlap
 e_img_dir = "/mnt/SN750/00_Donnees_SSD/256_over50p/"
 e_mask_bin_dir = "/mnt/SN750/00_Donnees_SSD/256_over50p/mask_bin"
 e_mask_multi_dir = "/mnt/SN750/00_Donnees_SSD/256_over50p/mask_multiclass"
 e_lidar_dir = "/mnt/SN750/00_Donnees_SSD/256_over50p/mnt"
 
-# path kenauk
-k_img_dir= "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/train"
-k_mask_dir = "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/mask_bin/train"
-k_lidar_dir = "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/lidar_mnt/train"
+# Kenauk full new
+k_img_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/256"
+k_mask_bin_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/256/mask_bin"
+k_mask_multi_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/256/mask_multiclass"
 
-k_val_img_dir = "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/val"
-k_val_mask_dir = "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/mask_bin/val"
-k_val_mnt_dir = "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/lidar_mnt/val"
+# # path kenauk (old)
+# k_img_dir= "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/train"
+# k_mask_dir = "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/mask_bin/train"
+# k_lidar_dir = "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/lidar_mnt/train"
 
-# Path Kenauk Full (test)
-k_test_img = "/mnt/Data/00_Donnees/01_trainings/03_kenauk_test_full/sen2_print"
-k_test_mask = "/mnt/Data/00_Donnees/01_trainings/03_kenauk_test_full/mask_bin"
-k_test_lid = "/mnt/Data/00_Donnees/01_trainings/03_kenauk_test_full/lidar_mnt"
+# k_val_img_dir = "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/val"
+# k_val_mask_dir = "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/mask_bin/val"
+# k_val_mnt_dir = "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/lidar_mnt/val"
+
+# # Path Kenauk Full (test)
+# k_test_img = "/mnt/Data/00_Donnees/01_trainings/03_kenauk_test_full/sen2_print"
+# k_test_mask = "/mnt/Data/00_Donnees/01_trainings/03_kenauk_test_full/mask_bin"
+# k_test_lid = "/mnt/Data/00_Donnees/01_trainings/03_kenauk_test_full/lidar_mnt"
 
 def get_datasets(
     train_region,
@@ -57,64 +62,44 @@ def get_datasets(
 
 # Defining training paths by region
     if train_region == "kenauk":
-        train_dir = k_img_dir
-        train_mnt = k_lidar_dir
-        val_dir = k_val_img_dir 
-        val_mnt = k_val_mnt_dir
+        img_train_dir = e_img_dir
 
-        # Choosing mask paths by classif mode
-        if classif_mode == "bin":
-            print("Using training paths from Kenauk for a binary classification")
-            train_maskdir = k_mask_dir
-            val_maskdir = k_val_mask_dir
+        train_ds = kenauk_rasterio_3_inputs(
+            train_dir=k_img_dir,
+            classif_mode=classif_mode
+            #transform=train_transform
+            )
 
-        elif classif_mode == "multiclass":
-            print("This option is not available at the moment")
-        else:
-            print("Something is wrong with your Kenauk paths")
 
-        # Initiating dataset for Kenauk
-        train_ds = KenaukDataset_rasterio(
-        image_dir=train_dir,
-        mask_dir=train_maskdir,
-        mnt_dir=train_mnt,
-        #transform=train_transform
-        )
+        # Creating train, val, test datasets
+        if test_region == 'local_split':
+            train_set_size = int(len(train_ds) * 0.80)
+            valid_set_size = (len(train_ds) - train_set_size) // 2
+            test_set_size =  len(train_ds) - (train_set_size + valid_set_size)
+            train_ds, val_ds, test_ds = random_split(train_ds, [train_set_size, valid_set_size, test_set_size])
 
-        val_ds = KenaukDataset_rasterio(
-        image_dir=val_dir,
-        mask_dir=val_maskdir,
-        mnt_dir=val_mnt,
-        #transform=train_transform
-        )
-
-        test_ds = KenaukDataset_rasterio(
-        image_dir=k_test_img,
-        mask_dir=k_test_mask,
-        mnt_dir=k_test_lid,
-        #transform=train_transform
-        )
+        elif test_region == 'kenauk_full':
+            print("This is not available/logical for this dataset", train_region, test_region)
 
     elif train_region == "estrie":
         img_train_dir = e_img_dir 
-        mnt_train_dir = e_lidar_dir
+        #mnt_train_dir = e_lidar_dir
 
         # Choosing mask paths by classif mode
-        if classif_mode == "bin":
-            print("Using training paths from Estrie for a binary classification")
-            train_maskdir = e_mask_bin_dir
+        # if classif_mode == "bin":
+        #     print("Using training paths from Estrie for a binary classification")
+        #     #train_maskdir = e_mask_bin_dir
 
-            # Initiate dataset
-            train_ds = estrie_stack2(
-                image_dir=img_train_dir,
-                mask_dir=train_maskdir,
-                mnt_dir=mnt_train_dir,
-                #transform=train_transform
-            )
+        #     # Initiate dataset
+        #     train_ds = estrie_rasterio_3_inputs(
+        #         train_dir=img_train_dir,
+        #         classif_mode=classif_mode
+        #         #transform=train_transform
+        #     )
 
-        elif classif_mode == "multiclass":
-            print("Using training paths from Estrie for a multi-class classification")
-            train_maskdir = e_mask_multi_dir
+        # elif classif_mode == "multiclass":
+        #     print("Using training paths from Estrie to train for a multi-class classification")
+        #     train_maskdir = e_mask_multi_dir
 
             # # Initiate dataset
             # train_ds = estrie_rasterio(
@@ -125,11 +110,12 @@ def get_datasets(
 
             # TODO make selectable datasets in options (ex. : stack, sen2, sen 2 + sen 1, sen2 + lidar, etc.)
             # Initiate dataset
-            train_ds = estrie_rasterio_3_inputs(
-                train_dir=img_train_dir,
-                classif_mode=classif_mode
-                #transform=train_transform
-            )
+
+        train_ds = estrie_rasterio_3_inputs(
+            train_dir=img_train_dir,
+            classif_mode=classif_mode
+            #transform=train_transform
+        )
 
         # Creating train, val, test datasets
         if test_region == 'local_split':
@@ -137,15 +123,35 @@ def get_datasets(
             valid_set_size = (len(train_ds) - train_set_size) // 2
             test_set_size =  len(train_ds) - (train_set_size + valid_set_size)
             train_ds, val_ds, test_ds = random_split(train_ds, [train_set_size, valid_set_size, test_set_size])
+
         elif test_region == 'kenauk_full':
             # Initiate kenauk full dataset
-            print("**ATTENTION** There is no multi label set for full kenauk yet")
-            test_kenauk_full_ds = KenaukDataset_stack2(
-            image_dir=k_test_img,
-            mask_dir=k_test_mask,
-            mnt_dir=k_test_lid,
+            # Choosing mask paths by classif mode
+
+            # if classif_mode == "bin":
+            #     print("binary classification for estrie needs to be verified in utils.py")
+            #     #print("Testing will be made on the full Kenauk dataset for a binary classification")
+            #     #train_maskdir = e_mask_bin_dir
+
+            # # test_kenauk_full_ds = KenaukDataset_stack2(
+            # # image_dir=k_test_img,
+            # # mask_dir=k_test_mask,
+            # # mnt_dir=k_test_lid,
+            # # #transform=train_transform
+            # # )
+
+            # elif classif_mode == "multiclass":
+            #     print("Testing on Kenauk full dataset after training on Estrie dataset for a multiclass classification")
+            #     train_maskdir = k_mask_multi_dir
+
+#TODO classif_mode from datasets SHOULD TAKE CARE OF CHOOSING RIGHT MASK and thus if and elif might be removable
+
+            test_kenauk_full_ds = kenauk_rasterio_3_inputs(
+            train_dir=k_img_dir,
+            classif_mode=classif_mode
             #transform=train_transform
             )
+
             train_set_size = int(len(train_ds) * 0.80)
             valid_set_size = (len(train_ds) - train_set_size)
             train_ds, val_ds = random_split(train_ds, [train_set_size, valid_set_size])

@@ -561,8 +561,10 @@ class estrie_rasterio_3_inputs(Dataset):
 
         if self.classif_mode == "bin":
             mask_path = os.path.join(self.image_dir, 'mask_bin', self.images[index].replace("sen2_ete", "mask_bin"))
+            #print("USING mask_bin FOR BINARY CLASSIFICATION FOR ESTRIE")
         elif self.classif_mode == "multiclass":
             mask_path = os.path.join(self.image_dir, 'mask_multiclass', self.images[index].replace("sen2_ete", "mask_multiclass"))
+            #print("USING mask_multiclass FOR MULTICLASS CLASSIFICATION FOR ESTRIE")
         else:
             print("There is something wrong with your mask dataset or paths (dataset.py)")
         
@@ -640,6 +642,143 @@ class estrie_rasterio_3_inputs(Dataset):
 
         return img_opt, img_lidar, mask, img_rad, sen2_ete_path
 
+class kenauk_rasterio_3_inputs(Dataset):
+    """ 
+        The folder containing 'sen2_ete' is filtered to respect the wanted files shape for training. If this is not the 
+        case, you need to change '/sen2_ete' from the instance variable 'self.images' called in the init phase of the 
+        class.
+
+    """
+    def __init__(self, train_dir, classif_mode, transform=None):
+        self.image_dir = train_dir
+        self.classif_mode = classif_mode
+        self.transform = transform       
+        
+        #self.images = [x for x in os.listdir(train_dir + "/sen2_ete") if x.endswith(('.tif'))]
+
+        #TODO please make this better (TEMP) : 
+
+        print("\n \nWARNING WARNING WARNING WARNING WARNING : bad_images are removed and it might be very bad if you are trying to run tests on kenauk dataset\n \n")
+
+        bad_images = ['sen2_ete.247.tif', 'sen2_ete.402.tif', 'sen2_ete.730.tif', 'sen2_ete.731.tif', 'sen2_ete.732.tif', 
+        'sen2_ete.733.tif', 'sen2_ete.734.tif', 'sen2_ete.735.tif', 'sen2_ete.736.tif', 'sen2_ete.737.tif', 
+        'sen2_ete.738.tif', 'sen2_ete.739.tif', 'sen2_ete.740.tif', 'sen2_ete.741.tif', 'sen2_ete.742.tif', 
+        'sen2_ete.743.tif', 'sen2_ete.123.tif', 'sen2_ete.154.tif', 'sen2_ete.185.tif', 'sen2_ete.216.tif', 
+        'sen2_ete.278.tif', 'sen2_ete.30.tif', 'sen2_ete.309.tif', 'sen2_ete.340.tif', 'sen2_ete.371.tif', 
+        'sen2_ete.433.tif', 'sen2_ete.464.tif', 'sen2_ete.495.tif', 'sen2_ete.526.tif', 'sen2_ete.557.tif', 
+        'sen2_ete.588.tif', 'sen2_ete.61.tif', 'sen2_ete.619.tif', 'sen2_ete.650.tif', 'sen2_ete.681.tif', 
+        'sen2_ete.712.tif', 'sen2_ete.713.tif', 'sen2_ete.714.tif', 'sen2_ete.715.tif', 'sen2_ete.716.tif', 
+        'sen2_ete.717.tif', 'sen2_ete.718.tif', 'sen2_ete.719.tif', 'sen2_ete.720.tif', 'sen2_ete.721.tif', 
+        'sen2_ete.722.tif', 'sen2_ete.723.tif', 'sen2_ete.724.tif', 'sen2_ete.725.tif', 'sen2_ete.726.tif', 
+        'sen2_ete.727.tif', 'sen2_ete.728.tif', 'sen2_ete.729.tif', 'sen2_ete.92.tif']
+
+        self.images = [x for x in os.listdir(train_dir + "/sen2_ete") if x.endswith(('.tif')) if x not in bad_images]
+
+        print("debug this mess")
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, index):      
+        # sentinel 2 images
+        sen2_ete_path = os.path.join(self.image_dir, 'sen2_ete', self.images[index])
+        sen2_print_path = os.path.join(self.image_dir, 'sen2_print', self.images[index].replace("ete", "print"))
+
+        # lidar images
+        mnt_path = os.path.join(self.image_dir, 'mnt', self.images[index].replace("sen2_ete", "mnt"))
+        mhc_path = os.path.join(self.image_dir, 'mhc', self.images[index].replace("sen2_ete", "mhc"))
+        slopes_path = os.path.join(self.image_dir, 'pentes', self.images[index].replace("sen2_ete", "pentes"))
+        tpi_path = os.path.join(self.image_dir, 'tpi', self.images[index].replace("sen2_ete", "tpi"))
+        tri_path = os.path.join(self.image_dir, 'tri', self.images[index].replace("sen2_ete", "tri"))
+        twi_path = os.path.join(self.image_dir, 'twi', self.images[index].replace("sen2_ete", "twi"))
+
+        # sentinel-1 images
+        sen1_ete_path = os.path.join(self.image_dir, 'sen1_ete', self.images[index]).replace("sen2_ete", "sen1_ete")
+        sen1_print_path = os.path.join(self.image_dir, 'sen1_print', self.images[index].replace("sen2_ete", "sen1_print"))
+
+
+        if self.classif_mode == "bin":
+            mask_path = os.path.join(self.image_dir, 'mask_bin', self.images[index].replace("sen2_ete", "mask_bin"))
+            #print("USING mask_bin FOR BINARY CLASSIFICATION FOR KENAUK")
+        elif self.classif_mode == "multiclass":
+            mask_path = os.path.join(self.image_dir, 'mask_multiclass', self.images[index].replace("sen2_ete", "mask_multiclass"))
+            #print("USING mask_bin FOR MULTICLASS CLASSIFICATION FOR KENAUK")
+        else:
+            print("There is something wrong with your mask dataset or paths (dataset.py)")
+        
+        # normalize the bands
+        # clip the value between [0 - 10000]
+        #TODO function or loop to normalize images instead or repeating
+        # sen2_ete normalization
+        sen2_ete_img = np.array(tiff.imread(sen2_ete_path), dtype=np.float32)
+        sen2_ete_img = np.where(sen2_ete_img < 0, 0, sen2_ete_img)  # clip value under 0
+        sen2_ete_img = np.where(sen2_ete_img > 10000, 10000, sen2_ete_img)  # clip value over 10 000
+        sen2_ete_img = sen2_ete_img/10000 # divide the array by 10000 so all the value are between [0-1]
+
+        # sen2_print normalization
+        sen2_print_img = np.array(tiff.imread(sen2_print_path), dtype=np.float32)
+        sen2_print_img = np.where(sen2_print_img < 0, 0, sen2_print_img)  # clip value under 0
+        sen2_print_img = np.where(sen2_print_img > 10000, 10000, sen2_print_img)  # clip value over 10 000
+        sen2_print_img = sen2_print_img/10000 # divide the array by 10000 so all the value are between [0-1]
+
+        # stack both sentinel 2 images
+        img_opt = np.dstack((sen2_ete_img, sen2_print_img))
+
+        # Lidar images
+        # TODO loop / function to expand_dims
+        img_mnt = np.array(tiff.imread(mnt_path))
+        img_mnt = np.expand_dims(img_mnt, axis=2)
+
+        img_mhc = np.array(tiff.imread(mhc_path))
+        img_mhc = np.expand_dims(img_mhc, axis=2)
+
+        img_slopes = np.array(tiff.imread(slopes_path))
+        img_slopes = np.expand_dims(img_slopes, axis=2)
+
+        img_tpi = np.array(tiff.imread(tpi_path))
+        img_tpi = np.expand_dims(img_tpi, axis=2)
+
+        img_tri = np.array(tiff.imread(tri_path))
+        img_tri = np.expand_dims(img_tri, axis=2)
+
+        img_twi = np.array(tiff.imread(twi_path))
+        img_twi = np.expand_dims(img_twi, axis=2)
+
+        img_lidar = np.dstack((img_mnt, img_mhc, img_slopes, img_tpi, img_tri, img_twi))
+
+        if img_lidar.dtype != 'float32':
+            img_lidar = np.float32(img_lidar) # Only for overlapping dataset #TODO
+        else:
+            pass
+
+        # Sentinel-1 images
+        sen1_ete_img = np.array(tiff.imread(sen1_ete_path), dtype=np.float32)
+        sen1_print_img = np.array(tiff.imread(sen1_print_path), dtype=np.float32)
+
+        img_rad = np.dstack((sen1_ete_img, sen1_print_img)) # stack both sen-1 images
+
+        # Mask images
+        #mask = np.array(tiff.imread(mask_path)) / 255
+        mask = np.array(tiff.imread(mask_path)) 
+        #mask[mask == 255.0] = 1.0
+
+        if mask.dtype != 'float32':
+            mask = np.float32(mask) # Only for overlapping dataset #TODO
+        else:
+            pass
+
+       #print("stop") # Debug breakpoint
+
+        # Cast to tensor for better permute
+        img_opt = torch.from_numpy(img_opt)
+        img_opt = img_opt.permute(2,0,1)
+        img_lidar = torch.from_numpy(img_lidar)
+        img_lidar = img_lidar.permute(2,0,1)
+        mask  = torch.from_numpy(mask)
+        img_rad = torch.from_numpy(img_rad)
+        img_rad = img_rad.permute(2,0,1)
+
+        return img_opt, img_lidar, mask, img_rad, sen2_ete_path
 
 if __name__ == "__main__":
 # Import data with custom loader
