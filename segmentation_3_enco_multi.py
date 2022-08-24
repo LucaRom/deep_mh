@@ -133,7 +133,7 @@ class SemSegment(LightningModule):
         train_f1   = self.train_f1(preds_accu, mask_loss)
         
         # Metric dictionnary
-        log_dict = {"train_loss": train_loss, "train_accu": train_accu, "train_f1": train_f1}
+        log_dict = {"train_loss": train_loss.detach(), "train_accu": train_accu, "train_f1": train_f1}
 
         # Call to log
         self.log("train_loss", train_loss, batch_size=BATCH_SIZE)
@@ -228,7 +228,7 @@ class SemSegment(LightningModule):
 
         #return {"log": log_dict, "val_loss": log_dict["val_loss"], "progress_bar": log_dict}
 
-
+    @torch.no_grad()
     def test_step(self, batch, batch_idx):
         self.trainer.model.eval()
         # x, y, z, img_path = batch
@@ -247,7 +247,7 @@ class SemSegment(LightningModule):
 
         preds = self(img, lidar, radar)   # predictions
 
-        self.trainer.model.train()
+        #self.trainer.model.train() # Now in test_epoch_end()
 
         preds_temp   = preds.argmax(dim=1).unsqueeze(1)
         preds_recast = preds_temp.type(torch.IntTensor).to(device=device)     
@@ -295,7 +295,7 @@ class SemSegment(LightningModule):
         #return {'preds' : preds, 'img_path' : img_path}
 
 
-
+    @torch.no_grad()
     def test_epoch_end(self, outputs):
         # TODO Add logs to test aswell?
 
@@ -379,6 +379,7 @@ class SemSegment(LightningModule):
             #plt.savefig("lightning_logs/version_{version}/predict_geo_{num}.tif".format(version = log_version, num = x))
             plt.close(fig)
 
+        self.trainer.model.train()
         
         # plt.imshow(np.transpose(ori_input[[3,2,1],:,:],(1,2,0))*3) # Show source
         # plt.imshow(predict_sig) # show predicted value
@@ -593,13 +594,13 @@ if __name__ == "__main__":
     #cli_main()
 
      # Import data with custom loader
-    train_region = "estrie"
-    test_region = "local_split"
+    train_region = "kenauk"
+    test_region = "local_split"   # local_split or kenauk_full
     classif_mode = "multiclass"
     PIN_MEMORY = True
     NUM_WORKERS = 8
     BATCH_SIZE = 6
-    num_epochs = 25
+    num_epochs = 100
     optim_main = "sg"  # 'Ad' ou 'sg'
     lr_main = 0.001
     num_layers_main = 4
