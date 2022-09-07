@@ -3,6 +3,8 @@ lightning_logs/
 lightning_logs_backup/
 logs/
 .git_bckps/
+.vscode/
 *.png
 *.yaml
+*.joblib
 testground.py

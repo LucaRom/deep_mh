@@ -104,7 +104,7 @@ class SemSegment(LightningModule):
         preds = self(img)   # predictions
 
         #with torch.cuda.amp.autocast():
-        preds = self(img)
+        #preds = self(img)
 
         mask_loss = mask.float().unsqueeze(1)
         preds_loss = preds.float()

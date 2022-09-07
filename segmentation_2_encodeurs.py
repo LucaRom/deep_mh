@@ -117,9 +117,11 @@ class SemSegment(LightningModule):
         #with torch.cuda.amp.autocast():
         preds = self(img, lidar)
 
-        mask_loss = mask.float().unsqueeze(1)
+
         preds_loss = preds.float()
         preds_sig = torch.sigmoid(preds)
+
+        mask_loss = mask.float().unsqueeze(1)
 
         # x, y = batch
         # preds = self(x)
