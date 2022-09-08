@@ -1,5 +1,7 @@
 import matplotlib
 import matplotlib.pyplot as plt
+import matplotlib.legend_handler
+from matplotlib.legend_handler import HandlerLine2D
 import seaborn as sns
 import numpy as np
 import os
@@ -11,7 +13,8 @@ import rasterio
 from sklearn import metrics
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.metrics import confusion_matrix, plot_confusion_matrix, classification_report
+from sklearn.metrics import confusion_matrix, plot_confusion_matrix, classification_report, roc_curve, auc
+from imblearn.ensemble import BalancedRandomForestClassifier
 
 # # Full
 # k_sen2_e_path = "D:/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/sen2/ete/s2_kenauk_3m_ete_aout2020.tif"
@@ -28,20 +31,24 @@ from sklearn.metrics import confusion_matrix, plot_confusion_matrix, classificat
 # k_mask_b_path    = "D:/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/mask/kenauk_mask_bin_3m.tif"
 # k_mask_m_path    = "D:/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/mask/kenauk_mask_multiclass_3m.tif"
 
-# # Full linux
-k_sen2_e_path = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/sen2/ete/s2_kenauk_3m_ete_aout2020.tif"
-k_sen2_p_path = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/sen2/print/S2_de_kenauk_3m_printemps_mai2020.tif"
-k_sen1_e_path = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/sen1/ete/s1_kenauk_3m_ete_aout2020.tif"
-k_sen1_p_path = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/sen1/print/S1_kenauk_3m_printemps_mai2020.tif"
-k_mnt_path    = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/lidar/mnt_kenauk_3m.tif"
-k_mhc_path    = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/lidar/mhc_kenauk_3m.tif"
-k_pentes_path = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/lidar/pentes_kenauk_3m.tif"
-k_tpi_path    = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/lidar/tpi_kenauk_3m.tif"
-k_tri_path    = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/lidar/tri_kenauk_3m.tif"
-k_twi_path    = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/lidar/tri_kenauk_3m.tif"
+# Full linux
+def load_paths_linux(): 
+       k_sen2_e_path = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/sen2/ete/s2_kenauk_3m_ete_aout2020.tif"
+       k_sen2_p_path = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/sen2/print/S2_de_kenauk_3m_printemps_mai2020.tif"
+       k_sen1_e_path = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/sen1/ete/s1_kenauk_3m_ete_aout2020.tif"
+       k_sen1_p_path = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/sen1/print/S1_kenauk_3m_printemps_mai2020.tif"
+       k_mnt_path    = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/lidar/mnt_kenauk_3m.tif"
+       k_mhc_path    = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/lidar/mhc_kenauk_3m.tif"
+       k_pentes_path = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/lidar/pentes_kenauk_3m.tif"
+       k_tpi_path    = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/lidar/tpi_kenauk_3m.tif"
+       k_tri_path    = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/lidar/tri_kenauk_3m.tif"
+       k_twi_path    = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/lidar/tri_kenauk_3m.tif"
 
-k_mask_b_path    = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/mask/kenauk_mask_bin_3m.tif"
-k_mask_m_path    = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/mask/kenauk_mask_multiclass_3m.tif"
+       k_mask_b_path    = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/mask/kenauk_mask_bin_3m.tif"
+       k_mask_m_path    = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/mask/kenauk_mask_multiclass_3m.tif"
+
+       return k_sen2_e_path, k_sen2_p_path, k_sen1_e_path, k_sen1_p_path, k_mnt_path, k_mhc_path, k_pentes_path, \
+              k_tpi_path, k_tri_path, k_twi_path, k_mask_b_path, k_mask_m_path
 
 # Small patch
 #image_dir = "D:/00_Donnees/02_maitrise/01_trainings/kenauk/256/"
@@ -63,7 +70,7 @@ k_mask_m_path    = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/process
 # k_mask_m_path    = os.path.join(image_dir, 'mask_multiclass', image_nom.replace("sen2_ete", "mask_multiclass"))
 
 # Load in rasterio
-def load_kenauk_full():
+def load_kenauk_full(): #Seulement pour prédiction avec modele, sinon caller le CSV
        img_sen2_ete = rasterio.open(k_sen2_e_path)
        img_sen2_print = rasterio.open(k_sen2_p_path)
 
@@ -222,79 +229,99 @@ def load_kenauk_full():
 #                     ))
 
 
-training_csv_path = "/mnt/SN750/00_Donnees_SSD/csv_rf/estrie_training_full.csv"
-#training_csv_path = "F:/00_Donnees_SSD/csv_rf/estrie_training_full.csv"
 
-# Load all with chunks
-# df_temp = pd.read_csv(training_csv_path, chunksize=100000, iterator=True) # 116 391 936 pixels
-#                                                                           #  58 195 968 (half)
-#                                                                           #     100 000 (as unit reference)
+def load_cvs_train():
 
-# df = pd.concat(df_temp, ignore_index=True)
+       # Load all with chunks
+       # df_temp = pd.read_csv(training_csv_path, chunksize=100000, iterator=True) # 116 391 936 pixels
+       #                                                                           #  58 195 968 (half)
+       #                                                                           #     100 000 (as unit reference)
 
-# Load randoms line with skiprows
-nlinesfile = 116391936
-#nlinesrandomsample = 58195968
-#nlinesrandomsample = 116391936 // 4
-#nlinesrandomsample = 116391936 // 5
-#nlinesrandomsample = 116391936 // 10
-nlinesrandomsample = 116391936 // 50
-#nlinesrandomsample = 116391936 // 100000
+       # df = pd.concat(df_temp, ignore_index=True)
 
-lines2skip = np.random.choice(np.arange(1,nlinesfile+1), (nlinesfile-nlinesrandomsample), replace=False)
+       # Load randoms line with skiprows
+       nlinesfile = 116391936
 
-print("loading data")
-#df = pd.read_csv(training_csv_path, skiprows=lines2skip)
-df2 = load_kenauk_full()
-df = df2.sample(frac = .35) # Random samples
-del lines2skip
-del df2
+       #nlinesrandomsample = 116391936 // 2
+       #nlinesrandomsample = 116391936 // 4
+       #nlinesrandomsample = 116391936 // 5
+       #nlinesrandomsample = 116391936 // 10
+       #nlinesrandomsample = 116391936 // 50       # most balanced las t test
+       #nlinesrandomsample = 116391936 // 100000
+                                      #116391936
 
-print("finish loading data")
+       nlinesrandomsample = 116391936 // 25
 
-feature_names = ['s2_e_B1', 's2_e_B2', 's2_e_B3', 's2_e_B4', 's2_e_B5',
-       's2_e_B6', 's2_e_B7', 's2_e_B8', 's2_e_B8a', 's2_e_B9', 's2_e_B11',
-       's2_e_B12', 's2_p_B1', 's2_p_B2', 's2_p_B3', 's2_p_B4', 's2_p_B5',
-       's2_p_B6', 's2_p_B7', 's2_p_B8', 's2_p_B8a', 's2_p_B9', 's2_p_B11',
-       's2_p_B12', 's1_e_VH', 's1_e_VV', 's1_e_ratio', 's1_p_VH', 's1_p_VV',
-       's1_p_ratio', 'mnt', 'mhc', 'slopes', 'tpi', 'tri', 'twi']
 
-selected_feature_names = ['s2_e_B2', 's2_e_B3', 's2_e_B4', 's2_e_B5',
-       's2_e_B6', 's2_e_B7', 's2_e_B8', 's2_e_B8a', 's2_e_B11',
-       's2_e_B12', 's2_p_B2', 's2_p_B3', 's2_p_B4', 's2_p_B5',
-       's2_p_B6', 's2_p_B7', 's2_p_B8', 's2_p_B8a', 's2_p_B11',
-       's2_p_B12', 's1_e_VH', 's1_e_VV', 's1_e_ratio', 's1_p_VH', 's1_p_VV',
-       's1_p_ratio', 'mnt', 'mhc', 'slopes', 'tpi', 'tri', 'twi']
+       lines2skip = np.random.choice(np.arange(1,nlinesfile+1), (nlinesfile-nlinesrandomsample), replace=False)
 
-# TODO seperate fonction for
-#print("Calculating correlation")
-#print(df.corr())
-#df_corr = df.corr()
+       training_csv_path = "/mnt/SN750/00_Donnees_SSD/csv_rf/estrie_training_full.csv"
+       #training_csv_path = "F:/00_Donnees_SSD/csv_rf/estrie_training_full.csv"
 
-# Preparing graphic 
-# print("Generating graphic")
-# plt.figure(figsize=(20,20))
-# #sns.heatmap(cor, annot=True, cmap=plt.cm.viridis)
-# sns.heatmap(df_corr, annot=True, fmt=".1f", cmap=plt.cm.viridis, annot_kws={'fontsize':5})
-# plt.show()
+       print("loading data")
+       df = pd.read_csv(training_csv_path, skiprows=lines2skip)
+       #df2 = #load_kenauk_full() #juste pour prédire
+       df = df.sample(frac = .35) # Random samples
+       del lines2skip
+       #del df2
 
-# Model for Random Forest
 
-print("Creating data and labels")
-data = df[selected_feature_names]
-label = df['mask_multi']
-print("Deleting original DF")
-del df
-print("Done creating label and data")
+       print("finish loading data")
 
-# Split dataset into training set and test set
-print("Creating trianing and test sets")
-#X_train, X_test, y_train, y_test = train_test_split(data, label, test_size=0.2)
-print("Deleting data and label variables")
-# del data
-# del label
-print("done")
+       # feature_names = ['s2_e_B1', 's2_e_B2', 's2_e_B3', 's2_e_B4', 's2_e_B5',
+       #        's2_e_B6', 's2_e_B7', 's2_e_B8', 's2_e_B8a', 's2_e_B9', 's2_e_B11',
+       #        's2_e_B12', 's2_p_B1', 's2_p_B2', 's2_p_B3', 's2_p_B4', 's2_p_B5',
+       #        's2_p_B6', 's2_p_B7', 's2_p_B8', 's2_p_B8a', 's2_p_B9', 's2_p_B11',
+       #        's2_p_B12', 's1_e_VH', 's1_e_VV', 's1_e_ratio', 's1_p_VH', 's1_p_VV',
+       #        's1_p_ratio', 'mnt', 'mhc', 'slopes', 'tpi', 'tri', 'twi']
 
+       selected_feature_names = ['s2_e_B2', 's2_e_B3', 's2_e_B4', 's2_e_B5',
+              's2_e_B6', 's2_e_B7', 's2_e_B8', 's2_e_B8a', 's2_e_B11',
+              's2_e_B12', 's2_p_B2', 's2_p_B3', 's2_p_B4', 's2_p_B5',
+              's2_p_B6', 's2_p_B7', 's2_p_B8', 's2_p_B8a', 's2_p_B11',
+              's2_p_B12', 's1_e_VH', 's1_e_VV', 's1_e_ratio', 's1_p_VH', 's1_p_VV',
+              's1_p_ratio', 'mhc', 'slopes', 'tpi', 'tri', 'twi']
+
+       #selected_feature_names = ['twi', 'mhc', 's2_p_B11', 's2_p_B12', 's2_p_B5', 's2_e_B7', 'tri', 's2_e_B3', 's2_p_B6', 's2_p_B7' ]
+
+       # TODO seperate fonction for
+       #print("Calculating correlation")
+       #print(df.corr())
+       #df_corr = df.corr()
+
+       # Preparing graphic 
+       # print("Generating graphic")
+       # plt.figure(figsize=(20,20))
+       # #sns.heatmap(cor, annot=True, cmap=plt.cm.viridis)
+       # sns.heatmap(df_corr, annot=True, fmt=".1f", cmap=plt.cm.viridis, annot_kws={'fontsize':5})
+       # plt.show()
+
+       # Model for Random Forest
+
+       print("Creating data and labels")
+       data = df[selected_feature_names]
+
+       #TODO maybe drop earlier (in fonction/rasterio) to save ressource?
+       # print('dropping MNT column')
+       # data = data.drop(columns=['mnt'])
+       # print('dropped')
+
+       label = df['mask_multi']
+       print("Deleting original DF")
+       del df
+       print("Done creating label and data")
+
+       return data, label
+
+def split_dataset(data, label):
+       # Split dataset into training set and test set
+       print("Creating trianing and test sets")
+       X_train, X_test, y_train, y_test = train_test_split(data, label, test_size=0.2)
+       print("Deleting data and label variables")
+       del data
+       del label
+       print("done")
+       return X_train, X_test, y_train, y_test 
 
 param_grid = {
         "n_estimators": [100, 500, 1000],
@@ -302,72 +329,209 @@ param_grid = {
         "max_depth": [None, 2, 6, 10]
     }
 
-#best params = n_estimators=1000, max_features='sqrt', max_depth=None,
-#clf = RandomForestClassifier(n_estimators=100, max_features='sqrt', max_depth=None, n_jobs=-1, verbose=1)
+def fit_data_model(optim = False):
+       if optim == True:
+              #clf = RandomForestClassifier(n_estimators=100,n_jobs=-1, verbose=1)
+              # CV_clf = GridSearchCV(estimator=clf, param_grid=param_grid, cv=5, scoring='accuracy',
+              #        return_train_score=True)
+              # CV_clf.fit(X_train, y_train)
+              #print("Best params:", CV_clf.best_params_)
+              print('not implemented yet')
+       elif optim == False:
+              # #set classifier parameters and train classifier
+              # print("Start RF fit")
+              # #best params = n_estimators=1000, max_features='sqrt', max_depth=None,
+              # clf = RandomForestClassifier(n_estimators=1000, max_features='sqrt', max_depth=None, class_weight='balanced_subsample', n_jobs=-1, verbose=1) #n_jobs=-1 prend tous les threads possible
+              # clf.fit(X_train, y_train)
+              print("Done")
 
-# CV_clf = GridSearchCV(estimator=clf, param_grid=param_grid, cv=5, scoring='accuracy',
-#                      return_train_score=True)
-# CV_clf.fit(X_train, y_train)
-# print("Best params:", CV_clf.best_params_) 
 
-#set classifier parameters and train classifier
-# print("Start RF fit")
-# clf = RandomForestClassifier(n_estimators=100,n_jobs=-1, verbose=1) #n_jobs=-1 prend tous les threads possible
-# clf.fit(X_train, y_train)
+def load_model(model_name): 
+       print("loading model")
+       #clf = load('model_50_100nestim.joblib')
+       clf = model_name
+       print("model loaded")
+
+       return clf
+
+# # print("juste avant dump")
+# # #clf = CV_clf.best_estimator_
+# #dump(clf, 'model_50_100nestim.joblib')
+# # print("juste apres dump")
+
+# #def
+# print("Starting prediction on test dataset")
+# #y_pred = clf.predict(X_test)
+# y_pred = clf.predict(data)
 # print("Done")
 
+# print("Generating CM et accuracy")
+# #conf_mat = confusion_matrix(y_test, y_pred)
+# conf_mat = confusion_matrix(label, y_pred)
 
-print("loading model")
-clf = load('model_50_100nestim.joblib')
-print("model loaded")
+# # print("Accuracy:", metrics.accuracy_score(y_test, y_pred))
+# # print(classification_report(y_test,y_pred))
+# # print(conf_mat)
 
-# print("juste avant dump")
-# #clf = CV_clf.best_estimator_
-#dump(clf, 'model_50_100nestim.joblib')
-# print("juste apres dump")
-
-print("Starting prediction on test dataset")
-#y_pred = clf.predict(X_test)
-y_pred = clf.predict(data)
-print("Done")
-
-print("Generating CM et accuracy")
-#conf_mat = confusion_matrix(y_test, y_pred)
-conf_mat = confusion_matrix(label, y_pred)
-
-# print("Accuracy:", metrics.accuracy_score(y_test, y_pred))
-# print(classification_report(y_test,y_pred))
+# print("Accuracy:", metrics.accuracy_score(label, y_pred))
+# print(classification_report(label,y_pred))
 # print(conf_mat)
 
-print("Accuracy:", metrics.accuracy_score(label, y_pred))
-print(classification_report(label,y_pred))
-print(conf_mat)
+# print("Plotting CM")
 
-print("Plotting CM")
+# # disp = plot_confusion_matrix(clf, X_test, y_test,
+# #                             cmap=plt.cm.Blues,
+# #                             values_format='d')
 
-# disp = plot_confusion_matrix(clf, X_test, y_test,
+# disp = plot_confusion_matrix(clf, data, label,
 #                             cmap=plt.cm.Blues,
 #                             values_format='d')
 
-disp = plot_confusion_matrix(clf, data, label,
-                            cmap=plt.cm.Blues,
-                            values_format='d')
+# plt.xlabel('Prédit')
+# plt.ylabel('Réel')
 
-plt.xlabel('Prédit')
-plt.ylabel('Réel')
+# # importances = clf.feature_importances_
+# # std = np.std([tree.feature_importances_ for tree in clf.estimators_], axis=0)
 
-# importances = clf.feature_importances_
-# std = np.std([tree.feature_importances_ for tree in clf.estimators_], axis=0)
+# # forest_importances = pd.Series(importances, index=selected_feature_names)
+# # forest_importances = forest_importances.sort_values(ascending=True)
 
-# forest_importances = pd.Series(importances, index=selected_feature_names)
-# forest_importances = forest_importances.sort_values(ascending=True)
+# # fig, ax = plt.subplots()
+# # forest_importances.plot.barh(ax=ax)
+# # ax.set_title("Feature importances using MDI")
+# # ax.set_ylabel("Mean decrease in impurity")
+# # fig.tight_layout()
 
-# fig, ax = plt.subplots()
-# forest_importances.plot.barh(ax=ax)
-# ax.set_title("Feature importances using MDI")
-# ax.set_ylabel("Mean decrease in impurity")
-# fig.tight_layout()
+# plt.show()
 
-plt.show()
+# # Exporter la prédiction
 
-# Exporter la prédiction
+
+if __name__ == "__main__":
+
+       #np.random.seed(777)
+       np.random.seed(666)
+
+       test_name = 'rf_no_mnt_1000tr'
+
+       # Loading paths
+       k_sen2_e_path, k_sen2_p_path, k_sen1_e_path, k_sen1_p_path, k_mnt_path, k_mhc_path, k_pentes_path, \
+       k_tpi_path, k_tri_path, k_twi_path, k_mask_b_path, k_mask_m_path = load_paths_linux()
+
+       # Loading training data and labels
+       data, label = load_cvs_train()
+
+       # Split dataset
+       X_train, X_test, y_train, y_test = split_dataset(data, label)
+
+       print(len(X_train), len(X_test), len(y_train), len(y_test))
+
+       # Fit model
+       #fit_data_model(optim = False)
+       #set classifier parameters and train classifier
+       print("Start RF fit")
+       #best params = n_estimators=1000, max_features='sqrt', max_depth=None,
+       #clf = RandomForestClassifier(n_estimators=1000, oob_score=True, max_features='sqrt', class_weight='balanced_subsample', max_depth=9, n_jobs=-1, verbose=1) #n_jobs=-1 prend tous les threads possible
+       clf = BalancedRandomForestClassifier(n_estimators=1000, oob_score=True, max_features='sqrt', max_depth=9, n_jobs=-1, verbose=1)
+       clf.fit(X_train, y_train)
+       print("Done")
+
+       # testing max depths (see https://medium.com/all-things-ai/in-depth-parameter-tuning-for-random-forest-d67bb7e920d)
+       #max_depths = range(1, 32, 32, endpoint=True)
+       #max_depths = list(range(1, 32, 2))
+       # max_depths = list(range(1, 32))
+       
+       # train_results = []
+       # test_results = []
+
+       # for max_depth in max_depths:
+       #        print('Numero en cours : ', max_depth)
+       #        rf = RandomForestClassifier(max_depth=max_depth, oob_score=True, verbose=2, n_jobs=-1)
+       #        rf.fit(X_train, y_train)
+              
+       #        print('after fit')
+       #        train_pred = rf.predict(X_train)   
+
+       #        print('after preds')
+       #        train_acc = metrics.accuracy_score(y_train, train_pred)
+       #        train_results.append(train_acc)
+              
+
+       #        test_pred = rf.predict(X_test)
+
+       #        test_acc = metrics.accuracy_score(y_test, test_pred)   
+       #        test_results.append(test_acc)
+                
+       # line1, = plt.plot(max_depths, train_results, 'b', label="Train ACC")
+       # line2, = plt.plot(max_depths, test_results, 'r', label="Test ACC")
+       
+       # plt.legend(handler_map={line1: HandlerLine2D(numpoints=2)})
+       # plt.ylabel('ACCU score')
+
+       # plt.xlabel('Tree depth')
+       # plt.show()
+
+       # Export trained model
+       print("juste avant dump")
+       #clf = CV_clf.best_estimator_
+       dump(clf, test_name + '.joblib')
+       print("juste apres dump")
+
+       # Predict test dataset
+       #def
+       print("Starting prediction on test dataset")
+       y_pred = clf.predict(X_test)
+       #y_pred = clf.predict(data)
+       print("Done")
+
+
+       #Print CM and accuracy
+
+       print("Generating CM et accuracy")
+       conf_mat = confusion_matrix(y_test, y_pred)
+       #conf_mat = confusion_matrix(label, y_pred)
+
+       print("Accuracy:", metrics.accuracy_score(y_test, y_pred))
+       print(classification_report(y_test,y_pred))
+       print(conf_mat)
+
+       # print("Accuracy:", metrics.accuracy_score(label, y_pred))
+       # print(classification_report(label,y_pred))
+       # print(conf_mat)
+
+       print("Plotting CM")
+
+       disp = plot_confusion_matrix(clf, X_test, y_test,
+                                   cmap=plt.cm.Blues,
+                                   values_format='d')
+
+       plt.xlabel('Prédit')
+       plt.ylabel('Réel')
+
+       importances = clf.feature_importances_
+       std = np.std([tree.feature_importances_ for tree in clf.estimators_], axis=0)
+
+       filtered_labels_df = ['s2_e_B2', 's2_e_B3', 's2_e_B4', 's2_e_B5',
+              's2_e_B6', 's2_e_B7', 's2_e_B8', 's2_e_B8a', 's2_e_B11',
+              's2_e_B12', 's2_p_B2', 's2_p_B3', 's2_p_B4', 's2_p_B5',
+              's2_p_B6', 's2_p_B7', 's2_p_B8', 's2_p_B8a', 's2_p_B11',
+              's2_p_B12', 's1_e_VH', 's1_e_VV', 's1_e_ratio', 's1_p_VH', 's1_p_VV',
+              's1_p_ratio', 'mhc', 'slopes', 'tpi', 'tri', 'twi']
+
+       # filtered_labels_df = ['twi', 'mhc', 's2_p_B11', 's2_p_B12', 's2_p_B5', 's2_e_B7', 'tri', 's2_e_B3', 's2_p_B6', 's2_p_B7' ]
+
+       forest_importances = pd.Series(importances, index=filtered_labels_df )
+       forest_importances = forest_importances.sort_values(ascending=True)
+
+       fig, ax = plt.subplots()
+       forest_importances.plot.barh(ax=ax)
+       ax.set_title("Feature importances using MDI")
+       ax.set_ylabel("Mean decrease in impurity")
+       fig.tight_layout()
+
+       plt.show()
+
+#print('debug')
+
+       #load_model('model_50_100nestim.joblib')
+
