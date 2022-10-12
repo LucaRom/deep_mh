@@ -11,6 +11,7 @@ import numpy as np
 from pytorch_lightning.loggers import TensorBoardLogger
 from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 import rasterio
+from torchvision import transforms
 
 import matplotlib.pyplot as plt
 
@@ -34,7 +35,7 @@ class SemSegment(LightningModule):
         self,
         #lr: float = 0.001,
         #num_classes: int = 19,
-        num_classes: int = 1,
+        num_classes: int = 8,
         #num_layers: int = 5,
         features_start: int = 64,
         bilinear: bool = True,
@@ -67,10 +68,10 @@ class SemSegment(LightningModule):
         self.train_time_list = []
 
         # Metrics 
-        self.train_accuracy = torchmetrics.Accuracy()
-        self.val_accuracy = torchmetrics.Accuracy()
-        self.train_f1 = torchmetrics.F1Score()
-        self.val_f1 = torchmetrics.F1Score()
+        self.train_accuracy = torchmetrics.Accuracy(mdmc_average='samplewise')
+        self.val_accuracy = torchmetrics.Accuracy(mdmc_average='samplewise')
+        self.train_f1 = torchmetrics.F1Score(mdmc_average='samplewise')
+        self.val_f1 = torchmetrics.F1Score(mdmc_average='samplewise')
 
         # Model
         self.net = unet_3enco_sum(
@@ -111,37 +112,38 @@ class SemSegment(LightningModule):
                                                   # Batch expected output are linked from the dataset.py file
                                                   # TODO fix with a if "test" in dataset...
 
-        # img = img.float()   # x
-        # lidar = lidar.float()
-        # mask = mask.long()  # y 
-        # radar = radar.float()
+	# Switch to train mode
+        self.trainer.model.train()
+        
+        img = img.float()   # x
+        lidar = lidar.float()
+        mask = mask.long()  # y 
+        radar = radar.float()
 
         #with torch.cuda.amp.autocast():
         preds = self(img, lidar, radar)
-        #preds_loss = preds.float()
-        preds_sig = torch.sigmoid(preds)
 
         mask_loss = mask.float().unsqueeze(1)
 
         # Train metrics call
         #train_loss = torch.nn.CrossEntropyLoss()(preds, mask)
-        #train_loss = FocalLoss()(preds, mask)
-        train_loss  = torch.nn.BCEWithLogitsLoss()(preds, mask_loss)   
+        train_loss = FocalLoss()(preds, mask)
+        
         mask_loss = mask_loss.type(torch.IntTensor).to(device=device)
+        preds_accu = preds.argmax(dim=1).unsqueeze(1)
 
-        #preds_accu = preds.argmax(dim=1).unsqueeze(1)
 
-
-        train_accu = self.train_accuracy(preds_sig, mask_loss)
-        train_f1   = self.train_f1(preds_sig, mask_loss)
+        train_accu = self.train_accuracy(preds_accu, mask_loss)
+        train_f1   = self.train_f1(preds_accu, mask_loss)
         
         # Metric dictionnary
-        log_dict = {"train_loss": train_loss.detach(), "train_accu": train_accu, "train_f1": train_f1}
+        #log_dict = {"train_loss": train_loss.detach(), "train_accu": train_accu, "train_f1": train_f1}
+        log_dict = {"train_loss": train_loss.item(), "train_accu": train_accu.item(), "train_f1": train_f1.item()}
 
         # Call to log
-        self.log("train_loss", train_loss, batch_size=BATCH_SIZE)
-        self.log("train_f1", train_f1, batch_size=BATCH_SIZE)
-        self.log("train_accu", train_accu, prog_bar=True, batch_size=BATCH_SIZE)
+        self.log("train_loss", train_loss.item(), batch_size=BATCH_SIZE)
+        self.log("train_f1", train_f1.item(), batch_size=BATCH_SIZE)
+        self.log("train_accu", train_accu.item(), prog_bar=True, batch_size=BATCH_SIZE)
 
         #return {"loss": train_loss, "log": log_dict, "progress_bar": log_dict}
         #return {"log": log_dict, "progress_bar": log_dict}
@@ -184,46 +186,49 @@ class SemSegment(LightningModule):
         # mask = mask.long()
         # out = self(img)
 
-        img, lidar, mask, radar, img_path = batch  #img_path only needed in test
-        # img = img.float()   # x
-        # lidar = lidar.float()
-        # mask = mask.long()  # y
-        # radar = radar.float()
+        # Switch to eval mode
+        self.trainer.model.eval()
 
-        preds = self(img, lidar, radar)   # predictions
+        with torch.no_grad():
+            img, lidar, mask, radar, img_path = batch  #img_path only needed in test
+            img = img.float()   # x
+            lidar = lidar.float()
+            mask = mask.long()  # y
+            radar = radar.float()
 
-        #confmat = ConfusionMatrix(num_classes=2).to(device=device)
-        #self.conf_print = confmat(preds, mask)
-        #print(conf_print)
+            preds = self(img, lidar, radar)   # predictions
 
-        #mask_loss = mask.float().unsqueeze(1)
-        mask_loss = mask.float().unsqueeze(1)
-        preds_sig = preds.sigmoid()
+            #confmat = ConfusionMatrix(num_classes=2).to(device=device)
+            #self.conf_print = confmat(preds, mask)
+            #print(conf_print)
 
-        #loss_val = F.cross_entropy(out, mask, ignore_index=250)
-        #loss_val = F.binary_cross_entropy_with_logits(preds, mask_loss)
-        #val_loss  = torch.nn.NLLLoss()(preds_sig, mask_loss)
-        #val_loss = torch.nn.CrossEntropyLoss()(preds, mask)
-        val_loss  = torch.nn.BCEWithLogitsLoss()(preds, mask_loss)
+            #mask_loss = mask.float().unsqueeze(1)
+            mask_loss = mask.float().unsqueeze(1)
+            #preds_loss = preds.argmax(dim=1)
 
-        #preds_accu = preds.argmax(dim=1).unsqueeze(1)
+            #loss_val = F.cross_entropy(out, mask, ignore_index=250)
+            #loss_val = F.binary_cross_entropy_with_logits(preds, mask_loss)
+            #val_loss  = torch.nn.NLLLoss()(preds_sig, mask_loss)
+            #val_loss = torch.nn.CrossEntropyLoss()(preds, mask)
+            val_loss = FocalLoss()(preds, mask)
 
-        mask_loss = mask_loss.type(torch.IntTensor).to(device=device)
+            preds_accu = preds.argmax(dim=1).unsqueeze(1)
 
-        val_accu = self.val_accuracy(preds_sig, mask_loss)
-        val_f1   = self.val_f1(preds_sig, mask_loss)
+            mask_loss = mask_loss.type(torch.IntTensor).to(device=device)
+            val_accu = self.val_accuracy(preds_accu, mask_loss)
+            val_f1   = self.val_f1(preds_accu, mask_loss)
 
 
-        self.log("val_loss", val_loss, batch_size=BATCH_SIZE)
-        self.log("val_f1", val_f1, batch_size=BATCH_SIZE)
-        self.log("val_accu", val_accu, prog_bar=True,batch_size=BATCH_SIZE)
+            self.log("val_loss", val_loss.item(), batch_size=BATCH_SIZE)
+            self.log("val_f1", val_f1.item(), batch_size=BATCH_SIZE)
+            self.log("val_accu", val_accu.item(), prog_bar=True, batch_size=BATCH_SIZE)
 
-        return {"val_loss": val_loss, "val_acc": val_accu}
+        return {"val_loss": val_loss}
 
     def validation_epoch_end(self, outputs):
         loss_val = torch.stack([x["val_loss"] for x in outputs]).mean().detach().cpu()
         #self.log('val_loss_avg', loss_val, on_epoch=True, batch_size=BATCH_SIZE)
-        self.log('val_loss_avg', loss_val, prog_bar=True, logger=True, on_epoch=True, batch_size=BATCH_SIZE) 
+        self.log('val_loss_avg', loss_val.item(), prog_bar=True, logger=True, on_epoch=True, batch_size=BATCH_SIZE) 
 
 
         #log_dict = {"val_loss": loss_val}
@@ -253,10 +258,10 @@ class SemSegment(LightningModule):
 
         #self.trainer.model.train() # Now in test_epoch_end()
 
-        preds_temp   = np.multiply((preds.sigmoid().cpu() > 0.5),1)
+        preds_temp   = preds.argmax(dim=1).unsqueeze(1)
         preds_recast = preds_temp.type(torch.IntTensor).to(device=device)     
 
-        confmat = ConfusionMatrix(num_classes=2).to(device=device)
+        confmat = ConfusionMatrix(num_classes=8).to(device=device)
         conf_print = confmat(preds_recast, mask)
 
         # mask_loss = mask.float().unsqueeze(1) # Unsqueeze for BCE
@@ -339,11 +344,7 @@ class SemSegment(LightningModule):
             #predict_sig = np.multiply((predict_sig > 0.5),1)
             #predict_sig = outputs[x]['preds'][0].softmax(dim=1).argmax(dim=1).unsqueeze(1)
             #predict_sig = outputs[x]['preds'][0].cpu().softmax(dim=1).argmax(dim=0).unsqueeze(0).numpy()
-            #predict_sig = outputs[x]['preds'][0].cpu().argmax(dim=0).numpy().astype(np.int32)
-            predict_sig = outputs[x]['preds'][0].cpu().squeeze().sigmoid().numpy()
-            predict_sig = np.multiply((predict_sig > 0.5),1).astype(np.int32)
-
-
+            predict_sig = outputs[x]['preds'][0].cpu().argmax(dim=0).numpy().astype(np.int32)
 
             # write predict image to file
             tiff_save_path = "lightning_logs/version_{version}/predict_geo_{num}.tif".format(version = self.trainer.logger.version, num = x)
@@ -429,12 +430,12 @@ class SemSegment(LightningModule):
             opt = torch.optim.SGD(self.net.parameters(), momentum = 0.9, weight_decay = 0.001, lr=self.lr)
 
         #sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max = 10)
-        sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.95, mode='min', patience=7, verbose=True)
+        #sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.95, mode='min', patience=3, verbose=True)
         
         #return [opt], [sch]
 
-        return {'optimizer': opt, "lr_scheduler" : {'scheduler': sch, 'interval':'epoch', 'frequency': 1, 'monitor': 'val_loss'}}
-        #return {'optimizer': opt}
+        #return {'optimizer': opt, "lr_scheduler" : {'scheduler': sch, 'interval':'epoch', 'frequency': 1, 'monitor': 'val_loss'}}
+        return {'optimizer': opt}
 
     # def configure_optimizers(self):
     #     optimizer = torch.optim.Adam(self.net.parameters(), lr=1e-3)
@@ -557,13 +558,14 @@ def cli_main():
 
     checkpoint_callback = ModelCheckpoint(save_top_k=2, monitor="val_loss", mode="min")
 
-    lr_logger = LearningRateMonitor(logging_interval='step')
+    #lr_logger = LearningRateMonitor(logging_interval='step')
 
     # # train (custom)
     start_time = time.time()
     trainer = Trainer(accelerator='gpu', devices=1, 
-                      log_every_n_steps=1,
-                      callbacks=[checkpoint_callback, lr_logger], 
+                      #log_every_n_steps=1,
+                      #callbacks=[checkpoint_callback, lr_logger],
+                      callbacks=[checkpoint_callback], 
                       max_epochs=num_epochs)
     print("--- %s seconds (training) ---" % (time.time() - start_time))
 
@@ -603,19 +605,35 @@ if __name__ == "__main__":
 
      # Import data with custom loader
     train_region = "estrie"
-    test_region = "kenauk_full"   # local_split or kenauk_full
-    classif_mode = "bin"
+    test_region = "local_split"   # "local_split", "kenauk_2016", "kenauk_full" (old) 
+    classif_mode = "multiclass"
     PIN_MEMORY = True
-    NUM_WORKERS = 8
+    NUM_WORKERS = 4
     BATCH_SIZE = 6
-    num_epochs = 7
+    num_epochs = 50
     optim_main = "sg"  # 'Ad' ou 'sg'
     lr_main = 0.001
     num_layers_main = 4
     input_channel_main = 24
-    input_channel_lidar = 6
+    input_channel_lidar = 5 # 5 = pas de mnt, 6 = Full
     input_channel_radar = 6
     input_tile_size = 256 # Check size of output in test_epoch_end
+
+
+    # all_mean = [259.971087045696, 277.3490067676725, 520.4650232890134, 342.23574780553645, 906.7611488412249, 2656.3582951694643, 3203.3543093369944, 3389.6250611778078, 3487.079600166239, 3555.416409200909, 1714.2260907527316, 828.2768740555728, 457.4229830346009, 501.79759875320303, 694.4711397083421, 835.1158882308216, 1219.9447441650816, 1823.0661322180392, 2064.6505317461747, 2316.1887302003915, 2363.5869859139643, 2359.4662122932396, 2390.6124116260303, 1586.6126304451745, -15.479797, -9.211855, 6.267961, -15.0310545, -9.519093, 5.5120163])
+    # all_std  = [525.5551122108338, 526.4768589585602, 515.8903727938966, 527.3656790023017, 561.5222503677404, 836.1454714836563, 984.9190349745415, 1067.0420278801334, 1026.7569263359944, 1066.123618103052, 630.0584359871733, 505.2076063419134, 169.44646075504082, 249.03030944938908, 293.96819726121373, 408.20429488371605, 392.1811051266158, 492.36521601358254, 550.8773405439316, 623.9017038640061, 590.0457818993959, 540.556974947324, 740.4564895487368, 581.7629650224691])
+    
+    # # Sentinel 1
+    # s1_e_p_mean = torch.tensor([-15.479797, -9.211855, 6.267961, -15.0310545, -9.519093, 5.5120163])
+    # s1_e_p_std  = torch.tensor([1.622046, 1.8651232, 1.2285297, 2.1044014, 1.9065734, 1.37706]) 
+
+    # # Lidar
+    # estrie_lidar_mean = torch.tensor([7.798849, 5.5523205, 0.0029951811, 0.06429929, 6.7409873])
+    # estrie_lidar_std  = torch.tensor([7.033332, 5.196636, 1.0641352, 0.06102526, 3.182435])
+
+    # train_transform = transforms.Compose([
+    #     transforms.Normalize()
+    # ])
 
     # Call the loaders
     train_loader, val_loader, test_loader = get_datasets(

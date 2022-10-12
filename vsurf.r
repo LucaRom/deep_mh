@@ -20,7 +20,7 @@ col_names_names <- c('no_row', 's2_e_B1', 's2_e_B2', 's2_e_B3', 's2_e_B4', 's2_e
               's2_p_B12', 's1_e_VH', 's1_e_VV', 's1_e_ratio', 's1_p_VH', 's1_p_VV',
               's1_p_ratio', 'mnt', 'mhc', 'slopes', 'tpi', 'tri', 'twi', 'mask_bin', 'mask_multi')
 
-DF <- fread("shuf -n 100 /mnt/SN750/00_Donnees_SSD/csv_rf/estrie_training_full.csv", col.names=col_names_names)
+DF <- fread("shuf -n 1000 /mnt/SN750/00_Donnees_SSD/csv_rf/estrie_training_full.csv", col.names=col_names_names)
 
 x = DF[,  c('s2_e_B1', 's2_e_B2', 's2_e_B3', 's2_e_B4', 's2_e_B5',
         's2_e_B6', 's2_e_B7', 's2_e_B8', 's2_e_B8a', 's2_e_B9', 's2_e_B11',
@@ -33,3 +33,5 @@ y = DF$mask_multi
 
 library('VSURF')
 df.vsurf <- VSURF(x=x, y=y, parallel=TRUE)
+
+plot(df.vsurf)
