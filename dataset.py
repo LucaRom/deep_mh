@@ -5,525 +5,10 @@ from torch.utils.data import Dataset
 import numpy as np
 import torch
 import rasterio
+from multiprocessing import Manager
 
 # Pour tests
 from torch.utils.data import DataLoader, random_split
-
-class estrie_stack(Dataset):
-    def __init__(self, image_dir, mask_dir, mnt_dir, transform=None):
-        self.image_dir = image_dir
-        self.mask_dir = mask_dir
-        self.mnt_dir = mnt_dir
-        self.transform = transform
-        #self.images = os.listdir(image_dir)
-        self.all_img = [x for x in os.listdir(image_dir) if x.endswith(('.tif'))]
-
-        # Tri sur les images # TODO Optimiser parce que très lent et difficile à debugger
-                                # peut être faire en parrallèle? ou juste faire le tri avant
-                                # avec une utility
-        # Remove images in folder with wrong shape and no datas
-        wanted_shape = (512, 512, 12) # might be better to set as variable/parameter
-        self.images = []
-
-        for i in self.all_img :
-            img_path = os.path.join(image_dir, i)
-            test_img = np.array(tiff.imread(img_path), dtype=np.float32)
-            
-            if np.any(test_img == 0) or test_img.shape != wanted_shape:
-                pass
-            else:
-                self.images.append(i)
-
-    def __len__(self):
-        return len(self.images)
-
-    def __getitem__(self, index):
-        img_path = os.path.join(self.image_dir, self.images[index])
-        mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2", "mask_bin"))
-        #mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2", "mask_mutli"))
-        mnt_path = os.path.join(self.mnt_dir, self.images[index].replace("sen2", "lidar_mnt"))
-        
-        image = np.array(tiff.imread(img_path), dtype=np.float32)
-
-        # normalize the bands
-        # clip the value between [0 - 10000]
-        image = np.where(image < 0, 0, image)  # clip value under 0
-        image = np.where(image > 10000, 10000, image)  # clip value over 10 000
-        # divide the array by 10000 so all the value are between [0-1]
-        image = image/10000
-
-        img_mnt = np.array(tiff.imread(mnt_path))
-        img_mnt = np.expand_dims(img_mnt, axis=2)
-
-        # Stack optical and lidar
-        image = np.dstack((image, img_mnt))
-
-        #mask = np.array(tiff.imread(mask_path)) / 255
-        mask = np.array(tiff.imread(mask_path)) 
-        #mask[mask == 255.0] = 1.0
-
-       #print("stop") # Debug breakpoint
-
-        # Cast to tensor for better permute
-        image = torch.from_numpy(image)
-        image = image.permute(2,0,1)
-        mask  = torch.from_numpy(mask)
-
-        return image, mask
-
-class estrie_stack2(Dataset):
-    def __init__(self, image_dir, mask_dir, mnt_dir, transform=None):
-        self.image_dir = image_dir
-        self.mask_dir = mask_dir
-        self.mnt_dir = mnt_dir
-        self.transform = transform
-        #self.images = os.listdir(image_dir)
-        self.all_img = [x for x in os.listdir(image_dir) if x.endswith(('.tif'))]
-
-        # Tri sur les images # TODO Optimiser parce que très lent et difficile à debugger
-                                # peut être faire en parrallèle? ou juste faire le tri avant
-                                # avec une utility
-        # Remove images in folder with wrong shape and no datas
-        wanted_shape = (512, 512, 12) # might be better to set as variable/parameter
-        self.images = []
-
-        for i in self.all_img :
-            img_path = os.path.join(image_dir, i)
-            test_img = np.array(tiff.imread(img_path), dtype=np.float32)
-            
-            if np.any(test_img == 0) or test_img.shape != wanted_shape:
-                pass
-            else:
-                self.images.append(i)
-
-    def __len__(self):
-        return len(self.images)
-
-    def __getitem__(self, index):
-        img_path = os.path.join(self.image_dir, self.images[index])
-        mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2", "mask_bin"))
-        #mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2", "mask_mutli"))
-        mnt_path = os.path.join(self.mnt_dir, self.images[index].replace("sen2", "lidar_mnt"))
-        
-        #print(img_path, mask_path, mnt_path)
-
-        image = np.array(tiff.imread(img_path), dtype=np.float32)
-
-        # normalize the bands
-        # clip the value between [0 - 10000]
-        image = np.where(image < 0, 0, image)  # clip value under 0
-        image = np.where(image > 10000, 10000, image)  # clip value over 10 000
-        # divide the array by 10000 so all the value are between [0-1]
-        image = image/10000
-
-        img_mnt = np.array(tiff.imread(mnt_path))
-        img_mnt = np.expand_dims(img_mnt, axis=2)
-
-        # Stack optical and lidar
-        image = np.dstack((image, img_mnt))
-
-        #mask = np.array(tiff.imread(mask_path)) / 255
-        mask = np.array(tiff.imread(mask_path))
-        #mask[mask == 255.0] = 1.0
-
-       #print("stop") # Debug breakpoint
-
-        # Cast to tensor for better permute
-        image = torch.from_numpy(image)
-        image = image.permute(2,0,1)
-        mask  = torch.from_numpy(mask)
-
-        return image, mask, img_path
-
-class KenaukDataset_stack(Dataset):
-    def __init__(self, image_dir, mask_dir, mnt_dir, transform=None):
-        self.image_dir = image_dir
-        self.mask_dir = mask_dir
-        self.mnt_dir = mnt_dir
-        self.transform = transform
-        #self.images = os.listdir(image_dir)
-        self.images = [x for x in os.listdir(image_dir) if x.endswith(('.tif'))]
-
-    def __len__(self):
-        return len(self.images)
-
-    def __getitem__(self, index):
-        img_path = os.path.join(self.image_dir, self.images[index])
-        mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2", "mask_bin"))
-        mnt_path = os.path.join(self.mnt_dir, self.images[index].replace("sen2", "lidar"))
-        # mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2_print", "mask_bin"))
-        # mnt_path = os.path.join(self.mnt_dir, self.images[index].replace("sen2_print", "lidar"))
-        
-        
-        # input depug 
-        #img_path = os.path.join(self.image_dir, self.images[68])
-        #mask_path = os.path.join(self.mask_dir, self.images[68].replace("sen2_print", "mask_bin"))
-        
-        image = np.array(tiff.imread(img_path), dtype=np.float32)
-
-        # normalize the bands
-        # clip the value between [0 - 10000]
-        image = np.where(image < 0, 0, image)  # clip value under 0
-        image = np.where(image > 10000, 10000, image)  # clip value over 10 000
-        # divide the array by 10000 so all the value are between [0-1]
-        image = image/10000
-
-        img_mnt = np.array(tiff.imread(mnt_path))
-        img_mnt = np.expand_dims(img_mnt, axis=2)
-
-        # Create the stack
-        image = np.dstack((image, img_mnt))
-
-        #mask = np.array(tiff.imread(mask_path)) / 255
-        mask = np.array(tiff.imread(mask_path)) 
-        #mask[mask == 255.0] = 1.0
-
-        # Cast to tensor for better permute
-        image = torch.from_numpy(image)
-        image = image.permute(2,0,1)
-        mask  = torch.from_numpy(mask)
-
-        return image, mask #, img_path
-
-class KenaukDataset_stack2(Dataset):
-    def __init__(self, image_dir, mask_dir, mnt_dir, transform=None):
-        self.image_dir = image_dir
-        self.mask_dir = mask_dir
-        self.mnt_dir = mnt_dir
-        self.transform = transform
-        #self.images = os.listdir(image_dir)
-        self.images = [x for x in os.listdir(image_dir) if x.endswith(('.tif'))]
-
-    def __len__(self):
-        return len(self.images)
-
-    def __getitem__(self, index):
-        img_path = os.path.join(self.image_dir, self.images[index])
-        mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2", "mask_bin"))
-        mnt_path = os.path.join(self.mnt_dir, self.images[index].replace("sen2", "lidar"))
-        # mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2_print", "mask_bin"))
-        # mnt_path = os.path.join(self.mnt_dir, self.images[index].replace("sen2_print", "lidar"))
-        
-        
-        # input depug 
-        #img_path = os.path.join(self.image_dir, self.images[68])
-        #mask_path = os.path.join(self.mask_dir, self.images[68].replace("sen2_print", "mask_bin"))
-        
-        image = np.array(tiff.imread(img_path), dtype=np.float32)
-
-        # normalize the bands
-        # clip the value between [0 - 10000]
-        image = np.where(image < 0, 0, image)  # clip value under 0
-        image = np.where(image > 10000, 10000, image)  # clip value over 10 000
-        # divide the array by 10000 so all the value are between [0-1]
-        image = image/10000
-
-        img_mnt = np.array(tiff.imread(mnt_path))
-        img_mnt = np.expand_dims(img_mnt, axis=2)
-
-        # Create the stack
-        image = np.dstack((image, img_mnt))
-
-        #mask = np.array(tiff.imread(mask_path)) / 255
-        mask = np.array(tiff.imread(mask_path)) 
-        #mask[mask == 255.0] = 1.0
-
-        # Cast to tensor for better permute
-        image = torch.from_numpy(image)
-        image = image.permute(2,0,1)
-        mask  = torch.from_numpy(mask)
-
-        return image, mask, img_path
-
-class KenaukDataset(Dataset):
-    def __init__(self, image_dir, mask_dir, mnt_dir, transform=None):
-        self.image_dir = image_dir
-        self.mask_dir = mask_dir
-        self.mnt_dir = mnt_dir
-        self.transform = transform
-        #self.images = os.listdir(image_dir)
-        self.images = [x for x in os.listdir(image_dir) if x.endswith(('.tif'))]
-
-    def __len__(self):
-        return len(self.images)
-
-    def __getitem__(self, index):
-        img_path = os.path.join(self.image_dir, self.images[index])
-        mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2_print", "mask_bin"))
-        mnt_path = os.path.join(self.mnt_dir, self.images[index].replace("sen2_print", "lidar"))
-        
-        # input depug 
-        #img_path = os.path.join(self.image_dir, self.images[68])
-        #mask_path = os.path.join(self.mask_dir, self.images[68].replace("sen2_print", "mask_bin"))
-        
-        # debug
-        #print(index)
-        #print(self.images) #list des images
-        #print(img_path)
-        #print(mask_path)
-
-        ### Exemple avec PIL pour 3 ou 4 bandes
-        # #image = np.array(Image.open(img_path).convert("RGB"))
-        # image = np.array(Image.open(img_path))
-        # mask = np.array(Image.open(mask_path).convert("L"), dtype=np.float32)
-        # #mask[mask == 255.0] = 1.0
-
-        ### Version tiffile
-        #image = np.array(tiff.imread(img_path).transpose(), dtype=np.float32)
-
-        img_opt = np.array(tiff.imread(img_path), dtype=np.float32)
-        #img_opt = np.array(tiff.imread(img_path).transpose([2, 0, 1]), dtype=np.float32)
-        #img_opt = np.array(tiff.imread(img_path).transpose(2,1,0), dtype=np.float32)
-        #img_opt = np.array(tiff.imread(img_path), dtype=np.float32)
-
-        #print("debug")
-
-        # normalize the bands
-        # clip the value between [0 - 10000]
-        img_opt = np.where(img_opt < 0, 0, img_opt)  # clip value under 0
-        img_opt = np.where(img_opt > 10000, 10000, img_opt)  # clip value over 10 000
-        # divide the array by 10000 so all the value are between [0-1]
-        img_opt = img_opt/10000
-
-        img_mnt = np.array(tiff.imread(mnt_path))
-        img_mnt = np.expand_dims(img_mnt, axis=2)
-
-        #img_opt = np.dstack((img_opt, img_mnt))
-
-        #mask = np.array(tiff.imread(mask_path)) / 255
-        mask = np.array(tiff.imread(mask_path)) 
-        #mask[mask == 255.0] = 1.0
-
-       #print("stop") # Debug breakpoint
-
-        # Cast to tensor for better permute
-        img_opt = torch.from_numpy(img_opt)
-        img_opt = img_opt.permute(2,0,1)
-        img_mnt = torch.from_numpy(img_mnt)
-        img_mnt = img_mnt.permute(2,0,1)
-        mask  = torch.from_numpy(mask)
-
-        return img_opt, img_mnt, mask
-
-class KenaukDataset_rasterio(Dataset):
-    def __init__(self, image_dir, mask_dir, mnt_dir, transform=None):
-        self.image_dir = image_dir
-        self.mask_dir = mask_dir
-        self.mnt_dir = mnt_dir
-        self.transform = transform
-        #self.images = os.listdir(image_dir)
-
-        # Tri sur les images 
-        self.images = [x for x in os.listdir(image_dir) if x.endswith(('.tif'))]
-
-    def __len__(self):
-        return len(self.images)
-
-    def __getitem__(self, index):
-        img_path = os.path.join(self.image_dir, self.images[index])
-        mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2", "mask_bin"))
-        mnt_path = os.path.join(self.mnt_dir, self.images[index].replace("sen2", "lidar"))
-        
-        # # Extract CRS and transforms
-        # src = rasterio.open(img_path)
-        # sample_crs = src.crs
-        # transform_ori = src.transform
-        # src.close() # Needed?
-
-        img_opt = np.array(tiff.imread(img_path), dtype=np.float32)
-
-
-        # normalize the bands
-        # clip the value between [0 - 10000]
-        img_opt = np.where(img_opt < 0, 0, img_opt)  # clip value under 0
-        img_opt = np.where(img_opt > 10000, 10000, img_opt)  # clip value over 10 000
-
-        # divide the array by 10000 so all the value are between [0-1]
-        img_opt = img_opt/10000
-
-        img_mnt = np.array(tiff.imread(mnt_path))
-        img_mnt = np.expand_dims(img_mnt, axis=2)
-
-        img_opt = np.dstack((img_opt, img_mnt))
-
-        #mask = np.array(tiff.imread(mask_path)) / 255
-        mask = np.array(tiff.imread(mask_path)) 
-        #mask[mask == 255.0] = 1.0
-
-       #print("stop") # Debug breakpoint
-
-        # Cast to tensor for better permute
-        img_opt = torch.from_numpy(img_opt)
-        img_opt = img_opt.permute(2,0,1)
-        img_mnt = torch.from_numpy(img_mnt)
-        img_mnt = img_mnt.permute(2,0,1)
-        mask  = torch.from_numpy(mask)
-
-        return img_opt, img_mnt, mask, img_path
-
-# classes temporaire à cause des nomenclature des fichier
-class KenaukDataset_rasterio2(Dataset):
-    def __init__(self, image_dir, mask_dir, mnt_dir, transform=None):
-        self.image_dir = image_dir
-        self.mask_dir = mask_dir
-        self.mnt_dir = mnt_dir
-        self.transform = transform
-        #self.images = os.listdir(image_dir)
-
-        # Tri sur les images 
-        self.images = [x for x in os.listdir(image_dir) if x.endswith(('.tif'))]
-
-    def __len__(self):
-        return len(self.images)
-
-    def __getitem__(self, index):
-        img_path = os.path.join(self.image_dir, self.images[index])
-        mask_path = os.path.join(self.mask_dir, self.images[index].replace("sen2_print", "mask_bin"))
-        mnt_path = os.path.join(self.mnt_dir, self.images[index].replace("sen2_print", "lidar"))
-        
-        # # Extract CRS and transforms
-        # src = rasterio.open(img_path)
-        # sample_crs = src.crs
-        # transform_ori = src.transform
-        # src.close() # Needed?
-
-        img_opt = np.array(tiff.imread(img_path), dtype=np.float32)
-
-
-        # normalize the bands
-        # clip the value between [0 - 10000]
-        img_opt = np.where(img_opt < 0, 0, img_opt)  # clip value under 0
-        img_opt = np.where(img_opt > 10000, 10000, img_opt)  # clip value over 10 000
-
-        # divide the array by 10000 so all the value are between [0-1]
-        img_opt = img_opt/10000
-
-        img_mnt = np.array(tiff.imread(mnt_path))
-        img_mnt = np.expand_dims(img_mnt, axis=2)
-
-        img_opt = np.dstack((img_opt, img_mnt))
-
-        #mask = np.array(tiff.imread(mask_path)) / 255
-        mask = np.array(tiff.imread(mask_path)) 
-        #mask[mask == 255.0] = 1.0
-
-       #print("stop") # Debug breakpoint
-
-        # Cast to tensor for better permute
-        img_opt = torch.from_numpy(img_opt)
-        img_opt = img_opt.permute(2,0,1)
-        img_mnt = torch.from_numpy(img_mnt)
-        img_mnt = img_mnt.permute(2,0,1)
-        mask  = torch.from_numpy(mask)
-
-        return img_opt, img_mnt, mask, img_path
-
-
-# rasterio classe fait juste retourner le path vers l'image et le CRS et les Transforms
-# sont extraits en dehors du dataset
-class estrie_rasterio(Dataset):
-    """ 
-        The folder containing 'sen2_ete' is filtered to respect the wanted files shape for training. If this is not the 
-        case, you need to change '/sen2_ete' from the instance variable 'self.images' called in the init phase of the 
-        class.
-
-    """
-    def __init__(self, train_dir, classif_mode, transform=None):
-        self.image_dir = train_dir
-        self.classif_mode = classif_mode
-        self.transform = transform       
-        self.images = [x for x in os.listdir(train_dir + "/sen2_ete") if x.endswith(('.tif'))]
-
-    def __len__(self):
-        return len(self.images)
-
-    def __getitem__(self, index):      
-        # sentinel 2 images
-        sen2_ete_path = os.path.join(self.image_dir, 'sen2_ete', self.images[index])
-        sen2_print_path = os.path.join(self.image_dir, 'sen2_print', self.images[index].replace("ete", "print"))
-
-        # lidar images
-        mnt_path = os.path.join(self.image_dir, 'mnt', self.images[index].replace("sen2_ete", "mnt"))
-        mhc_path = os.path.join(self.image_dir, 'mhc', self.images[index].replace("sen2_ete", "mhc"))
-        slopes_path = os.path.join(self.image_dir, 'pentes', self.images[index].replace("sen2_ete", "pentes"))
-        tpi_path = os.path.join(self.image_dir, 'tpi', self.images[index].replace("sen2_ete", "tpi"))
-        tri_path = os.path.join(self.image_dir, 'tri', self.images[index].replace("sen2_ete", "tri"))
-        twi_path = os.path.join(self.image_dir, 'twi', self.images[index].replace("sen2_ete", "twi"))
-
-        #print("my ass")
-
-        if self.classif_mode == "bin":
-            mask_path = os.path.join(self.image_dir, 'mask_bin', self.images[index].replace("sen2_ete", "mask_bin"))
-        elif self.classif_mode == "multiclass":
-            mask_path = os.path.join(self.image_dir, 'mask_multiclass', self.images[index].replace("sen2_ete", "mask_multiclass"))
-        else:
-            print("There is something wrong with your mask dataset or paths (dataset.py)")
-        
-        # normalize the bands
-        # clip the value between [0 - 10000]
-        #TODO function or loop to normalize images instead or repeating
-        # sen2_ete normalization
-        sen2_ete_img = np.array(tiff.imread(sen2_ete_path), dtype=np.float32)
-        sen2_ete_img = np.where(sen2_ete_img < 0, 0, sen2_ete_img)  # clip value under 0
-        sen2_ete_img = np.where(sen2_ete_img > 10000, 10000, sen2_ete_img)  # clip value over 10 000
-        sen2_ete_img = sen2_ete_img/10000 # divide the array by 10000 so all the value are between [0-1]
-
-        # sen2_print normalization
-        sen2_print_img = np.array(tiff.imread(sen2_print_path), dtype=np.float32)
-        sen2_print_img = np.where(sen2_print_img < 0, 0, sen2_print_img)  # clip value under 0
-        sen2_print_img = np.where(sen2_print_img > 10000, 10000, sen2_print_img)  # clip value over 10 000
-        sen2_print_img = sen2_print_img/10000 # divide the array by 10000 so all the value are between [0-1]
-
-        # stack both sentinel 2 images
-        img_opt = np.dstack((sen2_ete_img, sen2_print_img))
-
-        # Lidar images
-        # TODO loop / function to expand_dims
-        img_mnt = np.array(tiff.imread(mnt_path))
-        img_mnt = np.expand_dims(img_mnt, axis=2)
-
-        img_mhc = np.array(tiff.imread(mhc_path))
-        img_mhc = np.expand_dims(img_mhc, axis=2)
-
-        img_slopes = np.array(tiff.imread(slopes_path))
-        img_slopes = np.expand_dims(img_slopes, axis=2)
-
-        img_tpi = np.array(tiff.imread(tpi_path))
-        img_tpi = np.expand_dims(img_tpi, axis=2)
-
-        img_tri = np.array(tiff.imread(tri_path))
-        img_tri = np.expand_dims(img_tri, axis=2)
-
-        img_twi = np.array(tiff.imread(twi_path))
-        img_twi = np.expand_dims(img_twi, axis=2)
-
-        img_lidar = np.dstack((img_mnt, img_mhc, img_slopes, img_tpi, img_tri, img_twi))
-
-        if img_lidar.dtype != 'float32':
-            img_lidar = np.float32(img_lidar) # Only for overlapping dataset #TODO
-        else:
-            pass
-
-        # Mask images
-        #mask = np.array(tiff.imread(mask_path)) / 255
-        mask = np.array(tiff.imread(mask_path))
-        #mask[mask == 255.0] = 1.0
-
-        if mask.dtype != 'float32':
-            mask = np.float32(mask) # Only for overlapping dataset #TODO
-        else:
-            pass
-
-       #print("stop") # Debug breakpoint
-
-        # Cast to tensor for better permute
-        img_opt = torch.from_numpy(img_opt)
-        img_opt = img_opt.permute(2,0,1)
-        img_lidar = torch.from_numpy(img_lidar)
-        img_lidar = img_lidar.permute(2,0,1)
-        mask  = torch.from_numpy(mask)
-
-        return img_opt, img_lidar, mask, sen2_ete_path
 
 class estrie_rasterio_3_inputs(Dataset):
     """ 
@@ -535,8 +20,10 @@ class estrie_rasterio_3_inputs(Dataset):
     def __init__(self, train_dir, classif_mode, transform=None):
         self.image_dir = train_dir
         self.classif_mode = classif_mode
-        self.transform = transform       
-        self.images = [x for x in os.listdir(train_dir + "/sen2_ete") if x.endswith(('.tif'))]
+        self.transform = transform   
+
+        manager = Manager()    
+        self.images = manager.list([x for x in os.listdir(train_dir + "/sen2_ete") if x.endswith(('.tif'))])
 
     def __len__(self):
         return len(self.images)
@@ -547,7 +34,7 @@ class estrie_rasterio_3_inputs(Dataset):
         sen2_print_path = os.path.join(self.image_dir, 'sen2_print', self.images[index].replace("ete", "print"))
 
         # lidar images
-        mnt_path = os.path.join(self.image_dir, 'mnt', self.images[index].replace("sen2_ete", "mnt"))
+        #mnt_path = os.path.join(self.image_dir, 'mnt', self.images[index].replace("sen2_ete", "mnt"))
         mhc_path = os.path.join(self.image_dir, 'mhc', self.images[index].replace("sen2_ete", "mhc"))
         slopes_path = os.path.join(self.image_dir, 'pentes', self.images[index].replace("sen2_ete", "pentes"))
         tpi_path = os.path.join(self.image_dir, 'tpi', self.images[index].replace("sen2_ete", "tpi"))
@@ -568,28 +55,39 @@ class estrie_rasterio_3_inputs(Dataset):
         else:
             print("There is something wrong with your mask dataset or paths (dataset.py)")
         
+        # print("Paths debugging")
+        # print("Sen_2_ete_path : ", sen2_ete_path)
+        # print("Sen_2_printemps_path : ", sen2_print_path)
+        # print("MHC: ", mhc_path)
+        # print("TPI, TRI, TWO: ", tpi_path, tri_path, twi_path)
+
         # normalize the bands
         # clip the value between [0 - 10000]
         #TODO function or loop to normalize images instead or repeating
-        # sen2_ete normalization
+        # sen2_ete clipping
         sen2_ete_img = np.array(tiff.imread(sen2_ete_path), dtype=np.float32)
         sen2_ete_img = np.where(sen2_ete_img < 0, 0, sen2_ete_img)  # clip value under 0
         sen2_ete_img = np.where(sen2_ete_img > 10000, 10000, sen2_ete_img)  # clip value over 10 000
-        sen2_ete_img = sen2_ete_img/10000 # divide the array by 10000 so all the value are between [0-1]
 
-        # sen2_print normalization
+        # Normalize
+        #sen2_ete_img = sen2_ete_img/10000 # divide the array by 10000 so all the value are between [0-1]
+
+        # sen2_print clipping
         sen2_print_img = np.array(tiff.imread(sen2_print_path), dtype=np.float32)
         sen2_print_img = np.where(sen2_print_img < 0, 0, sen2_print_img)  # clip value under 0
         sen2_print_img = np.where(sen2_print_img > 10000, 10000, sen2_print_img)  # clip value over 10 000
-        sen2_print_img = sen2_print_img/10000 # divide the array by 10000 so all the value are between [0-1]
+
+        # Normalize
+        #sen2_print_img = sen2_print_img/10000 # divide the array by 10000 so all the value are between [0-1]
+
 
         # stack both sentinel 2 images
         img_opt = np.dstack((sen2_ete_img, sen2_print_img))
 
         # Lidar images
         # TODO loop / function to expand_dims
-        img_mnt = np.array(tiff.imread(mnt_path))
-        img_mnt = np.expand_dims(img_mnt, axis=2)
+        #img_mnt = np.array(tiff.imread(mnt_path))
+        #img_mnt = np.expand_dims(img_mnt, axis=2)
 
         img_mhc = np.array(tiff.imread(mhc_path))
         img_mhc = np.expand_dims(img_mhc, axis=2)
@@ -606,7 +104,8 @@ class estrie_rasterio_3_inputs(Dataset):
         img_twi = np.array(tiff.imread(twi_path))
         img_twi = np.expand_dims(img_twi, axis=2)
 
-        img_lidar = np.dstack((img_mnt, img_mhc, img_slopes, img_tpi, img_tri, img_twi))
+        #img_lidar = np.dstack((img_mnt, img_mhc, img_slopes, img_tpi, img_tri, img_twi))
+        img_lidar = np.dstack((img_mhc, img_slopes, img_tpi, img_tri, img_twi))
 
         if img_lidar.dtype != 'float32':
             img_lidar = np.float32(img_lidar) # Only for overlapping dataset #TODO
@@ -631,18 +130,36 @@ class estrie_rasterio_3_inputs(Dataset):
 
        #print("stop") # Debug breakpoint
 
+        ## Mean and std value lists
+        # Sentinel 2
+        s2_e_e_mean = torch.tensor([259.971087045696, 277.3490067676725, 520.4650232890134, 342.23574780553645, 906.7611488412249, 2656.3582951694643, 3203.3543093369944, 3389.6250611778078, 3487.079600166239, 3555.416409200909, 1714.2260907527316, 828.2768740555728, 457.4229830346009, 501.79759875320303, 694.4711397083421, 835.1158882308216, 1219.9447441650816, 1823.0661322180392, 2064.6505317461747, 2316.1887302003915, 2363.5869859139643, 2359.4662122932396, 2390.6124116260303, 1586.6126304451745])
+        s2_e_e_std  = torch.tensor([525.5551122108338, 526.4768589585602, 515.8903727938966, 527.3656790023017, 561.5222503677404, 836.1454714836563, 984.9190349745415, 1067.0420278801334, 1026.7569263359944, 1066.123618103052, 630.0584359871733, 505.2076063419134, 169.44646075504082, 249.03030944938908, 293.96819726121373, 408.20429488371605, 392.1811051266158, 492.36521601358254, 550.8773405439316, 623.9017038640061, 590.0457818993959, 540.556974947324, 740.4564895487368, 581.7629650224691])
+        
+        # Sentinel 1
+        s1_e_p_mean = torch.tensor([-15.479797, -9.211855, 6.267961, -15.0310545, -9.519093, 5.5120163])
+        s1_e_p_std  = torch.tensor([1.622046, 1.8651232, 1.2285297, 2.1044014, 1.9065734, 1.37706]) 
+
+        # Lidar
+        estrie_lidar_mean = torch.tensor([7.798849, 5.5523205, 0.0029951811, 0.06429929, 6.7409873])
+        estrie_lidar_std  = torch.tensor([7.033332, 5.196636, 1.0641352, 0.06102526, 3.182435])
+
         # Cast to tensor for better permute
         img_opt = torch.from_numpy(img_opt)
         img_opt = img_opt.permute(2,0,1)
-        img_lidar = torch.from_numpy(img_lidar)
-        img_lidar = img_lidar.permute(2,0,1)
-        mask  = torch.from_numpy(mask)
         img_rad = torch.from_numpy(img_rad)
         img_rad = img_rad.permute(2,0,1)
+        img_lidar = torch.from_numpy(img_lidar)
+        img_lidar = img_lidar.permute(2,0,1)        
+        mask  = torch.from_numpy(mask)
+
+        # Apply standardization (see : discuss.pytorch.org/t/how-to-normalize-multidimensional-tensor/65304)
+        img_opt = img_opt.sub_(s2_e_e_mean[:, None, None]).div_(s2_e_e_std[:, None, None])
+        img_lidar = img_lidar.sub_(estrie_lidar_mean[:, None, None]).div_(estrie_lidar_std[:, None, None])
+        img_rad = img_rad.sub_(s1_e_p_mean[:, None, None]).div_(s1_e_p_std[:, None, None])
 
         return img_opt, img_lidar, mask, img_rad, sen2_ete_path
 
-class kenauk_rasterio_3_inputs(Dataset):
+class kenauk_rasterio_3_inputs(Dataset): 
     """ 
         The folder containing 'sen2_ete' is filtered to respect the wanted files shape for training. If this is not the 
         case, you need to change '/sen2_ete' from the instance variable 'self.images' called in the init phase of the 
@@ -652,13 +169,16 @@ class kenauk_rasterio_3_inputs(Dataset):
     def __init__(self, train_dir, classif_mode, transform=None):
         self.image_dir = train_dir
         self.classif_mode = classif_mode
-        self.transform = transform       
+        self.transform = transform
+        self.image_dir_2 = "/mnt/SN750/00_Donnees_SSD/256_HM_ST_kenauk/"     
         
         #self.images = [x for x in os.listdir(train_dir + "/sen2_ete") if x.endswith(('.tif'))]
 
         #TODO please make this better (TEMP) : 
 
-        print("\n \nWARNING WARNING WARNING WARNING WARNING : bad_images are removed and it might be very bad if you are trying to run tests on kenauk dataset\n \n")
+        print("\n \nWARNING WARNING WARNING WARNING WARNING : bad_images are removed for training and it might be very bad if you are trying to run tests on kenauk dataset\n \n")
+
+        #print("\n \nWARNING WARNING WARNING WARNING WARNING : bad_images are NOT removed for training and \n \n")
 
         bad_images = ['sen2_ete.247.tif', 'sen2_ete.402.tif', 'sen2_ete.730.tif', 'sen2_ete.731.tif', 'sen2_ete.732.tif', 
         'sen2_ete.733.tif', 'sen2_ete.734.tif', 'sen2_ete.735.tif', 'sen2_ete.736.tif', 'sen2_ete.737.tif', 
@@ -672,7 +192,9 @@ class kenauk_rasterio_3_inputs(Dataset):
         'sen2_ete.722.tif', 'sen2_ete.723.tif', 'sen2_ete.724.tif', 'sen2_ete.725.tif', 'sen2_ete.726.tif', 
         'sen2_ete.727.tif', 'sen2_ete.728.tif', 'sen2_ete.729.tif', 'sen2_ete.92.tif']
 
-        self.images = [x for x in os.listdir(train_dir + "/sen2_ete") if x.endswith(('.tif')) if x not in bad_images]
+        #self.images = [x for x in os.listdir(train_dir + "/sen2_ete") if x.endswith(('.tif')) if x not in bad_images]
+        self.images = [x for x in os.listdir(self.image_dir_2 + "/sen2_ete") if x.endswith(('.tif')) if x not in bad_images]
+        #self.images = [x for x in os.listdir(train_dir + "/sen2_ete") if x.endswith(('.tif'))]
 
         print("debug this mess")
 
@@ -681,11 +203,11 @@ class kenauk_rasterio_3_inputs(Dataset):
 
     def __getitem__(self, index):      
         # sentinel 2 images
-        sen2_ete_path = os.path.join(self.image_dir, 'sen2_ete', self.images[index])
-        sen2_print_path = os.path.join(self.image_dir, 'sen2_print', self.images[index].replace("ete", "print"))
+        sen2_ete_path = os.path.join(self.image_dir_2, 'sen2_ete', self.images[index])
+        sen2_print_path = os.path.join(self.image_dir_2, 'sen2_print', self.images[index].replace("ete", "print"))
 
         # lidar images
-        mnt_path = os.path.join(self.image_dir, 'mnt', self.images[index].replace("sen2_ete", "mnt"))
+        #mnt_path = os.path.join(self.image_dir, 'mnt', self.images[index].replace("sen2_ete", "mnt"))
         mhc_path = os.path.join(self.image_dir, 'mhc', self.images[index].replace("sen2_ete", "mhc"))
         slopes_path = os.path.join(self.image_dir, 'pentes', self.images[index].replace("sen2_ete", "pentes"))
         tpi_path = os.path.join(self.image_dir, 'tpi', self.images[index].replace("sen2_ete", "tpi"))
@@ -693,8 +215,8 @@ class kenauk_rasterio_3_inputs(Dataset):
         twi_path = os.path.join(self.image_dir, 'twi', self.images[index].replace("sen2_ete", "twi"))
 
         # sentinel-1 images
-        sen1_ete_path = os.path.join(self.image_dir, 'sen1_ete', self.images[index]).replace("sen2_ete", "sen1_ete")
-        sen1_print_path = os.path.join(self.image_dir, 'sen1_print', self.images[index].replace("sen2_ete", "sen1_print"))
+        sen1_ete_path = os.path.join(self.image_dir_2, 'sen1_ete', self.images[index]).replace("sen2_ete", "sen1_ete")
+        sen1_print_path = os.path.join(self.image_dir_2, 'sen1_print', self.images[index].replace("sen2_ete", "sen1_print"))
 
 
         if self.classif_mode == "bin":
@@ -705,29 +227,37 @@ class kenauk_rasterio_3_inputs(Dataset):
             #print("USING mask_bin FOR MULTICLASS CLASSIFICATION FOR KENAUK")
         else:
             print("There is something wrong with your mask dataset or paths (dataset.py)")
-        
+
+        print("Paths debugging")
+        print("Sen_2_ete_path : ", sen2_ete_path)
+        print("Sen_2_printemps_path : ", sen2_print_path)
+        print("Sen_1_ete_path : ", sen1_ete_path)
+        print("Sen_1_printemps_path : ", sen1_print_path)
+        print("MHC: ", mhc_path)
+        print("TPI, TRI, TWO: ", tpi_path, tri_path, twi_path)
+
         # normalize the bands
         # clip the value between [0 - 10000]
         #TODO function or loop to normalize images instead or repeating
         # sen2_ete normalization
         sen2_ete_img = np.array(tiff.imread(sen2_ete_path), dtype=np.float32)
-        sen2_ete_img = np.where(sen2_ete_img < 0, 0, sen2_ete_img)  # clip value under 0
-        sen2_ete_img = np.where(sen2_ete_img > 10000, 10000, sen2_ete_img)  # clip value over 10 000
-        sen2_ete_img = sen2_ete_img/10000 # divide the array by 10000 so all the value are between [0-1]
+        # sen2_ete_img = np.where(sen2_ete_img < 0, 0, sen2_ete_img)  # clip value under 0
+        # sen2_ete_img = np.where(sen2_ete_img > 10000, 10000, sen2_ete_img)  # clip value over 10 000
+        # sen2_ete_img = sen2_ete_img/10000 # divide the array by 10000 so all the value are between [0-1]
 
         # sen2_print normalization
         sen2_print_img = np.array(tiff.imread(sen2_print_path), dtype=np.float32)
-        sen2_print_img = np.where(sen2_print_img < 0, 0, sen2_print_img)  # clip value under 0
-        sen2_print_img = np.where(sen2_print_img > 10000, 10000, sen2_print_img)  # clip value over 10 000
-        sen2_print_img = sen2_print_img/10000 # divide the array by 10000 so all the value are between [0-1]
+        # sen2_print_img = np.where(sen2_print_img < 0, 0, sen2_print_img)  # clip value under 0
+        # sen2_print_img = np.where(sen2_print_img > 10000, 10000, sen2_print_img)  # clip value over 10 000
+        # sen2_print_img = sen2_print_img/10000 # divide the array by 10000 so all the value are between [0-1]
 
         # stack both sentinel 2 images
         img_opt = np.dstack((sen2_ete_img, sen2_print_img))
 
         # Lidar images
         # TODO loop / function to expand_dims
-        img_mnt = np.array(tiff.imread(mnt_path))
-        img_mnt = np.expand_dims(img_mnt, axis=2)
+        #img_mnt = np.array(tiff.imread(mnt_path))
+        #img_mnt = np.expand_dims(img_mnt, axis=2)
 
         img_mhc = np.array(tiff.imread(mhc_path))
         img_mhc = np.expand_dims(img_mhc, axis=2)
@@ -744,7 +274,8 @@ class kenauk_rasterio_3_inputs(Dataset):
         img_twi = np.array(tiff.imread(twi_path))
         img_twi = np.expand_dims(img_twi, axis=2)
 
-        img_lidar = np.dstack((img_mnt, img_mhc, img_slopes, img_tpi, img_tri, img_twi))
+        #img_lidar = np.dstack((img_mnt, img_mhc, img_slopes, img_tpi, img_tri, img_twi))
+        img_lidar = np.dstack((img_mhc, img_slopes, img_tpi, img_tri, img_twi))
 
         if img_lidar.dtype != 'float32':
             img_lidar = np.float32(img_lidar) # Only for overlapping dataset #TODO
@@ -772,8 +303,33 @@ class kenauk_rasterio_3_inputs(Dataset):
         # Cast to tensor for better permute
         img_opt = torch.from_numpy(img_opt)
         img_opt = img_opt.permute(2,0,1)
+
+        # Mean and std value lists
+        # combined_mean = torch.tensor([
+        #                 298.9376736842285, 295.4163414577072, 533.0512058140661, 335.011499544136, 904.7482179833103, 2769.694844441057, 3352.3481529620663, 3507.679339513949, 3628.128361722713, 3681.886714013677, 1769.3827647437795, 832.3841287235765,
+        #                 389.73178500319295, 418.7855774087138, 656.2461824601817, 663.8277464836387, 1164.82661126222, 2267.199178786665, 2609.65239794843, 2826.5757717474403, 2885.967306830988, 2885.0676772511297, 2244.2198662295045, 1384.4035653061455
+        #                 ])
+
+        # combined_std  = torch.tensor([
+        #                 449.1333965424019, 447.09781235125655, 440.1281124724915, 448.5562977082119, 489.71626393358594, 
+        #                 882.6080290302698, 1074.64297530801, 1142.3471873971982, 1132.1216994695542, 1121.812465173574, 
+        #                 637.2357446197225, 454.657718157629, 182.1481184415827, 252.22961441363324, 271.82436188432376, 
+        #                 444.23478736031086, 384.49626301643093, 1043.6492154677742, 1255.1022957221837, 
+        #                 1267.5933253040087, 1263.0965697948964, 1229.1994225452902, 745.0200230290296, 607.8933293590522
+        #                 ])
+
+        # Apply standardization (see : discuss.pytorch.org/t/how-to-normalize-multidimensional-tensor/65304)
+        #img_opt = img_opt.sub_(combined_mean[:, None, None]).div_(combined_std[:, None, None])
+
+        k_lidar_means = torch.tensor([13.348262, 13.45669, -0.006740755, -3.689763, 5.7766604])
+        k_lidar_stds  = torch.tensor([7.7406297, 13.942361, 1.3129127, 241.4134, 5.6496654])
+
         img_lidar = torch.from_numpy(img_lidar)
         img_lidar = img_lidar.permute(2,0,1)
+
+        # Standardization
+        img_lidar = img_lidar.sub_(k_lidar_means[:, None, None]).div_(k_lidar_stds[:, None, None])
+
         mask  = torch.from_numpy(mask)
         img_rad = torch.from_numpy(img_rad)
         img_rad = img_rad.permute(2,0,1)
