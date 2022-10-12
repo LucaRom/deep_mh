@@ -19,7 +19,7 @@ from unet_3enco_sum import unet_3enco_sum
 from pytorch_lightning.callbacks import Callback, ModelCheckpoint, LearningRateMonitor
 
 # Custom LR
-from utils import get_datasets_inference
+from utils import get_datasets_inference, get_datasets
 
 # Custom loss
 from custom_loss import FocalLoss
@@ -231,12 +231,6 @@ class SemSegment(LightningModule):
     @torch.no_grad()
     def test_step(self, batch, batch_idx):
         self.trainer.model.eval()
-        # x, y, z, img_path = batch
-        # x = x.float()   # x
-        # y = y.float()   # y 
-        # z = z.long()    # y 
-
-        #preds = self(x, y)   # predictions
 
         img, lidar, mask, radar, img_path = batch 
 
@@ -247,78 +241,25 @@ class SemSegment(LightningModule):
 
         preds = self(img, lidar, radar)   # predictions
 
-        #self.trainer.model.train() # Now in test_epoch_end()
-
         preds_temp   = preds.argmax(dim=1).unsqueeze(1)
         preds_recast = preds_temp.type(torch.IntTensor).to(device=device)     
 
         confmat = ConfusionMatrix(num_classes=8).to(device=device)
         conf_print = confmat(preds_recast, mask)
-
-        # mask_loss = mask.float().unsqueeze(1) # Unsqueeze for BCE
-
-        # test_loss  = torch.nn.BCEWithLogitsLoss()(preds, mask_loss)
-
-        # mask_loss = mask.float().unsqueeze(1)
-        # preds_sig = preds.sigmoid()
-
-        # #loss_val = F.cross_entropy(out, mask, ignore_index=250)
-        # #loss_val = F.binary_cross_entropy_with_logits(preds, mask_loss)
-        # val_loss  = torch.nn.BCEWithLogitsLoss()(preds, mask_loss)
-
-        # mask_loss = mask_loss.type(torch.IntTensor).to(device=device)
-        # val_accu = self.val_accuracy(preds_sig, mask_loss)
-        # val_f1   = self.val_f1(preds_sig, mask_loss)
-
-
-        # loss = nn.CrossEntropyLoss(weight=self.weights.to(device=self.device))(preds, y)
-        # # self.log('test_loss', loss, prog_bar=True, logger=True,on_step=True, on_epoch=True) # , sync_dist=True
-        # loss = loss.detach().cpu()
-        # # preds = preds.cpu().detach()
-        # preds = preds.detach().cpu()
-        # # y = y.cpu().detach()
-        # y = y.detach().cpu()
-        # y = y.type(torch.IntTensor)
-    
-        # # prec_score = precision_score(y.numpy().flatten(), preds.softmax(dim=1).argmax(dim=1).numpy().flatten(), average='weighted' )
-        # # rec_score = recall_score(y.numpy().flatten(), preds.softmax().argmax(dim=1).numpy().flatten(), average='weighted')
-    
-        # self.pr = np.append(self.pr.flatten(), preds.softmax(dim=1).argmax(dim=1).numpy().flatten())
-        # self.yr = np.append(self.yr.flatten(), y.numpy().astype(np.int32).flatten())
-        # # gc.collect()
-        # #        print (y_reel)
-    
-        #return {'test_loss': loss, 'test_preds': preds, 'test_target': y}
-        
+       
         return {'conf matrice': conf_print, 'preds' : preds, 'img' : img, 'lidar' : lidar, 'mask' : mask, 'radar' : radar, 'img_path' : img_path}
         
-        #return {'preds' : preds, 'img_path' : img_path}
-
-
     @torch.no_grad()
     def test_epoch_end(self, outputs):
         # TODO Add logs to test aswell?
-
-        # get confusion matrix
-        # for x in range(len(outputs)):
-        #     outputs_confmat = outputs[x]['conf matrice'].cpu().numpy()
-        #     row_to_add = np.array([0,1])
-        #     results = np.vstack(( row_to_add, outputs_confmat))
-        #     print("\nConfusion matrix")
-        #     print(results)
-
-        # print outputs
-        # predict_sig = outputs[0]['preds'][2].cpu().squeeze().sigmoid().numpy()
-        # predict_sig = np.multiply((predict_sig > 0.5),1)
-        # plt.imshow(predict_sig)
 
         for x in range(len(outputs)):
             fig = plt.figure()
             cm = outputs[x]['conf matrice'].cpu().numpy()
             disp = ConfusionMatrixDisplay(confusion_matrix=cm)
             disp.plot()
-            #plt.savefig("lightning_logs/version_{version}/cm_{num}.png".format(version = self.trainer.logger.version, num = x))
-            plt.savefig("lightning_logs/inference_{version}/cm_ {num}.png".format(version = log_version, num = x))
+            plt.savefig("lightning_logs/inference_{version}/cm_{num}.png".format(version = log_version, num = x))
+            #plt.savefig("lightning_logs/version_{version}/predict_geo_{num}.tif".format(version = log_version, num = x))
             plt.close(fig)
 
             # Extract CRS and transforms
@@ -338,8 +279,8 @@ class SemSegment(LightningModule):
             predict_sig = outputs[x]['preds'][0].cpu().argmax(dim=0).numpy().astype(np.int32)
 
             # write predict image to file
-            #tiff_save_path = "lightning_logs/version_{version}/predict_geo_{num}.tif".format(version = self.trainer.logger.version, num = x)
             tiff_save_path = "lightning_logs/inference_{version}/predict_geo_{num}.tif".format(version = log_version, num = x)
+            #tiff_save_path = "lightning_logs/version_{version}/predict_geo_{num}.tif".format(version = log_version, num = x)
 
             predict_img = rasterio.open(tiff_save_path, 'w', driver='GTiff',
                             height = input_tile_size, width = input_tile_size,
@@ -361,58 +302,11 @@ class SemSegment(LightningModule):
             plt.imshow(ori_target)
             plt.title("Target")
 
-            # fig = plt.figure()
-            # plt.subplot(1,4,1)
-            # plt.imshow(np.transpose(ori_input[[3,2,1],:,:],(1,2,0))*3)
-            # plt.title("Input")
-            # plt.subplot(1,4,2)
-            # plt.imshow(predict_sig)
-            # plt.title("Predict")
-            # plt.subplot(1,4,3)
-            # plt.imshow(ori_target)
-            # plt.title("Target")
-            # plt.subplot(1,4,3)
-            # plt.show()
-            # plt.title("Confusion Matrix")
-
-            #plt.savefig("lightning_logs/version_{version}/fig_{num}.png".format(version = self.trainer.logger.version, num = x))
-            plt.savefig("lightning_logs/inference_{version}/fig_{num}.tif".format(version = log_version, num = x))
+            plt.savefig("lightning_logs/inference_{version}/fig_{num}.png".format(version = log_version, num = x))
+            #plt.savefig("lightning_logs/version_{version}/predict_geo_{num}.tif".format(version = log_version, num = x))
             plt.close(fig)
 
         self.trainer.model.train()
-        
-        # plt.imshow(np.transpose(ori_input[[3,2,1],:,:],(1,2,0))*3) # Show source
-        # plt.imshow(predict_sig) # show predicted value
-        # plt.imshow(ori_target) # show target
-
-
-        # plt.show()
-
-        # print("debug")
-
-        # for batch in outputs:
-        #     for sample in range(len(batch)): 
-        #         print(batch)
-        #         print(sample)
-        #         print("next")
-        #         ori_input = outputs[sample]['img'].cpu().numpy()
-        #         ori_taget = outputs[sample]['lidar'].cpu().numpy()
-        #         #predict_sig = outputs[sample]['preds'][].cpu().squeeze().sigmoid().numpy()
-        #         predict_sig = outputs[sample]['preds'].cpu().squeeze().sigmoid().numpy()
-
-        # unique, counts = np.unique(np.multiply((predict_sig > 0.5),1), return_counts=True)
-
-        # print('debug')
-        # print(outputs)
-    
-    #     # avg_loss = torch.stack([x['test_loss'] for x in outputs]).detach().mean()
-    #     preds = torch.cat([tmp['test_preds'] for tmp in outputs]).detach()
-    #     targets = torch.cat([tmp['test_target'] for tmp in outputs]).detach()
-
-    #     # ------ Confusion Matrix SKLEARN / Pandas ------
-    #     sklearn_cm_display = cfg.new_plot_cm(targets.numpy().astype(int).flatten(),
-    #                                          preds.softmax(dim=1).argmax(dim=1).numpy().flatten())
-    #     plt.close(sklearn_cm_display)
 
     def configure_optimizers(self):
         if optim_main == 'Ad':
@@ -491,7 +385,7 @@ if __name__ == "__main__":
 
      # Import data with custom loader
     train_region = "estrie"
-    test_region = "kenauk_2016"   # "local_split", "kenauk_2016", "kenauk_full" (old) 
+    test_region = "local_split"   # "local_split", "kenauk_2016", "kenauk_full" (old) 
     classif_mode = "multiclass"
     PIN_MEMORY = True
     NUM_WORKERS = 8
@@ -505,8 +399,20 @@ if __name__ == "__main__":
     input_channel_radar = 6
     input_tile_size = 256 # Check size of output in test_epoch_end
 
+    # # Call the loaders
+    # train_loader, val_loader, test_loader = get_datasets_inference(
+    # train_region,
+    # test_region,
+    # classif_mode,
+    # BATCH_SIZE,
+    # # train_transform,
+    # # val_transforms,
+    # NUM_WORKERS,
+    # PIN_MEMORY,
+    # )
+
     # Call the loaders
-    train_loader, val_loader, test_loader = get_datasets_inference(
+    train_loader, val_loader, test_loader = get_datasets(
     train_region,
     test_region,
     classif_mode,
@@ -520,7 +426,7 @@ if __name__ == "__main__":
     # Evaluate #TODO automatiser les paths
     #ckpt_path = "/mnt/Data/01_Codes/00_Github/Unet_lightning/lightning_logs/version_145/checkpoints/epoch=49-step=47400.ckpt"
     #ckpt_path = "/mnt/Data/01_Codes/00_Github/Unet_lightning/lightning_logs/version_151/checkpoints/epoch=9-step=9480.ckpt"
-    ckpt_path = "/mnt/Data/01_Codes/00_Github/Unet_lightning/lightning_logs/version_158/checkpoints/epoch=9-step=9480.ckpt"
-    log_version = "158_kenauk_2016"
+    ckpt_path = "/mnt/Data/01_Codes/00_Github/Unet_lightning/lightning_logs/version_182/checkpoints/epoch=46-step=40091.ckpt"
+    log_version = "182_kenauk_2020_4"
 
     evaluate_test_solo(ckpt_path, log_version)
