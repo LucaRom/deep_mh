@@ -1,8 +1,10 @@
 import torch
 #import torchvision
 #import wandb
-from dataset import KenaukDataset, KenaukDataset_rasterio, estrie_rasterio, estrie_stack, KenaukDataset_stack, KenaukDataset_stack2, estrie_stack2, estrie_rasterio_3_inputs, kenauk_rasterio_3_inputs
-from torch.utils.data import DataLoader, random_split
+from dataset import estrie_rasterio_3_inputs, kenauk_rasterio_3_inputs
+from torch.utils.data import DataLoader, random_split, SubsetRandomSampler
+import numpy as np
+import random
 
 # Define all paths
 # Paths (linux)
@@ -30,10 +32,15 @@ e_mask_bin_dir = "/mnt/SN750/00_Donnees_SSD/256_over50p/mask_bin"
 e_mask_multi_dir = "/mnt/SN750/00_Donnees_SSD/256_over50p/mask_multiclass"
 e_lidar_dir = "/mnt/SN750/00_Donnees_SSD/256_over50p/mnt"
 
-# Kenauk full new
-k_img_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/256"
-k_mask_bin_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/256/mask_bin"
-k_mask_multi_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/256/mask_multiclass"
+# Kenauk full - linux
+# k_img_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/256"
+# k_mask_bin_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/256/mask_bin"
+# k_mask_multi_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/256/mask_multiclass"
+
+# Kenauk 2016 - linux
+# k_img_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk_2016/256"
+# k_mask_bin_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk_2016/256/mask_bin"
+# k_mask_multi_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk_2016/256/mask_multiclass"
 
 # # path kenauk (old)
 # k_img_dir= "/mnt/Data/00_Donnees/01_trainings/mh_sentinel_2/sen2_print/train"
@@ -49,7 +56,217 @@ k_mask_multi_dir = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/256/mas
 # k_test_mask = "/mnt/Data/00_Donnees/01_trainings/03_kenauk_test_full/mask_bin"
 # k_test_lid = "/mnt/Data/00_Donnees/01_trainings/03_kenauk_test_full/lidar_mnt"
 
+# Path Kenauk Full (test)
+k_test_img = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/256" # TODO FIX THIS (paths in datasets...)
+k_test_mask = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/256/mask_bin"
+k_test_lid = "/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/256/lidar_mnt"
+
 def get_datasets(
+    train_region,
+    test_region,
+    classif_mode,
+    batch_size,
+    #train_transform,
+    #val_transform,
+    num_workers=1,
+    pin_memory=True,
+):
+
+# Defining training paths by region
+    if train_region == "kenauk_2016":
+        img_train_dir = e_img_dir
+
+        train_ds = kenauk_rasterio_3_inputs(
+            train_dir=k_img_dir,
+            classif_mode=classif_mode
+            #transform=train_transform
+            )
+
+
+        # Creating train, val, test datasets
+        if test_region == 'local_split':
+            train_set_size = int(len(train_ds) * 0.80)
+            valid_set_size = (len(train_ds) - train_set_size) // 2
+            test_set_size =  len(train_ds) - (train_set_size + valid_set_size)
+            train_ds, val_ds, test_ds = random_split(train_ds, [train_set_size, valid_set_size, test_set_size])
+
+        elif test_region == 'kenauk_full':
+            print("This is not available/logical for this dataset", train_region, test_region)
+
+    elif train_region == "estrie":
+        img_train_dir = e_img_dir 
+        #mnt_train_dir = e_lidar_dir
+
+        # Choosing mask paths by classif mode
+        # if classif_mode == "bin":
+        #     print("Using training paths from Estrie for a binary classification")
+        #     #train_maskdir = e_mask_bin_dir
+
+        #     # Initiate dataset
+        #     train_ds = estrie_rasterio_3_inputs(
+        #         train_dir=img_train_dir,
+        #         classif_mode=classif_mode
+        #         #transform=train_transform
+        #     )
+
+        # elif classif_mode == "multiclass":
+        #     print("Using training paths from Estrie to train for a multi-class classification")
+        #     train_maskdir = e_mask_multi_dir
+
+            # # Initiate dataset
+            # train_ds = estrie_rasterio(
+            #     train_dir=img_train_dir,
+            #     classif_mode=classif_mode
+            #     #transform=train_transform
+            # )
+
+            # TODO make selectable datasets in options (ex. : stack, sen2, sen 2 + sen 1, sen2 + lidar, etc.)
+            # Initiate dataset
+
+        train_ds = estrie_rasterio_3_inputs(
+            train_dir=img_train_dir,
+            classif_mode=classif_mode
+            #transform=train_transform
+        )
+
+        # Creating train, val, test datasets
+        if test_region == 'local_split':
+            # train_set_size = int(len(train_ds) * 0.80)
+            # valid_set_size = (len(train_ds) - train_set_size) // 2
+            # test_set_size =  len(train_ds) - (train_set_size + valid_set_size)
+            #train_ds, val_ds, test_ds = random_split(train_ds, [train_set_size, valid_set_size, test_set_size])
+            #train_temp, test_ds = train_test_split(train_ds, [train_set_size, valid_set_size, test_set_size])
+
+            # Spliting Test dataset out and generating random train and val from rest of indices
+            # Test for subset sampler #TODO better coding 
+            print('WARNING WARNING WARNING ON THE SPLIT')
+            indices = list(range(len(train_ds)))
+            split_val = len(train_ds) - int(np.floor(0.2 * len(train_ds)))
+            split_test = split_val + ((len(train_ds)- split_val ) // 2)
+
+            indices_train_val = indices[:split_test]
+            random.shuffle(indices_train_val)
+
+            split_val_rd = len(indices_train_val) - int(np.floor(0.2 *len(indices_train_val)))
+
+            train_idx, val_idx, test_idx = indices_train_val[:split_val_rd], indices_train_val[split_val_rd:], indices[split_test:]
+
+            train_sampler = SubsetRandomSampler(train_idx)
+            val_sampler = SubsetRandomSampler(val_idx)
+            test_sampler = SubsetRandomSampler(test_idx)
+
+            # train_ds = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, sampler=train_sampler)
+            # val_ds = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, sampler=val_sampler)
+            # test_ds = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, sampler=test_sampler)
+
+        elif test_region == 'kenauk_full':
+            # Initiate kenauk full dataset
+            # Choosing mask paths by classif mode
+
+            # if classif_mode == "bin":
+            #     print("binary classification for estrie needs to be verified in utils.py")
+            #     #print("Testing will be made on the full Kenauk dataset for a binary classification")
+            #     #train_maskdir = e_mask_bin_dir
+
+            # # test_kenauk_full_ds = KenaukDataset_stack2(
+            # # image_dir=k_test_img,
+            # # mask_dir=k_test_mask,
+            # # mnt_dir=k_test_lid,
+            # # #transform=train_transform
+            # # )
+
+            # elif classif_mode == "multiclass":
+            #     print("Testing on Kenauk full dataset after training on Estrie dataset for a multiclass classification")
+            #     train_maskdir = k_mask_multi_dir
+
+#TODO classif_mode from datasets SHOULD TAKE CARE OF CHOOSING RIGHT MASK and thus if and elif might be removable
+
+            test_kenauk_full_ds = kenauk_rasterio_3_inputs(
+            train_dir=k_img_dir,
+            classif_mode=classif_mode
+            #transform=train_transform
+            )
+
+            train_set_size = int(len(train_ds) * 0.80)
+            valid_set_size = (len(train_ds) - train_set_size)
+            train_ds, val_ds = random_split(train_ds, [train_set_size, valid_set_size])
+            test_ds = test_kenauk_full_ds
+
+
+        elif test_region == 'kenauk_2016':
+
+            test_kenauk_full_ds = kenauk_rasterio_3_inputs(
+            train_dir=k_img_dir,
+            classif_mode=classif_mode
+            #transform=train_transform
+            )
+
+            train_set_size = int(len(train_ds) * 0.80)
+            valid_set_size = (len(train_ds) - train_set_size)
+            train_ds, val_ds = random_split(train_ds, [train_set_size, valid_set_size])
+            test_ds = test_kenauk_full_ds
+
+        else:
+            print("Something is wrong with your Estrie paths")
+    
+    else:
+        print("Something is wrong with your overall paths")
+
+
+    # train_loader = DataLoader(
+    #     train_ds,
+    #     batch_size=batch_size,
+    #     num_workers=num_workers,
+    #     pin_memory=pin_memory,
+    #     shuffle=True,
+    # )
+
+    # val_loader = DataLoader(
+    #     val_ds,
+    #     batch_size=batch_size,
+    #     num_workers=num_workers,
+    #     pin_memory=pin_memory,
+    #     shuffle=False,
+    # )
+
+    # test_loader = DataLoader(
+    #     test_ds,
+    #     batch_size=1,
+    #     num_workers=0,
+    #     pin_memory=False,
+    #     shuffle=False,
+    # )
+
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        #shuffle=True,
+        sampler=train_sampler
+    )
+
+    val_loader = DataLoader(
+        train_ds,
+        batch_size=batch_size,
+        num_workers=num_workers,
+        pin_memory=pin_memory,
+        #shuffle=False,
+        sampler=val_sampler
+    )
+
+    test_loader = DataLoader(
+        train_ds,
+        batch_size=1,
+        num_workers=0,
+        pin_memory=False,
+        #shuffle=False,
+        sampler=test_sampler
+    )
+
+    return train_loader, val_loader, test_loader
+
+def get_datasets_inference(
     train_region,
     test_region,
     classif_mode,
@@ -119,14 +336,33 @@ def get_datasets(
 
         # Creating train, val, test datasets
         if test_region == 'local_split':
-            train_set_size = int(len(train_ds) * 0.80)
-            valid_set_size = (len(train_ds) - train_set_size) // 2
-            test_set_size =  len(train_ds) - (train_set_size + valid_set_size)
-            train_ds, val_ds, test_ds = random_split(train_ds, [train_set_size, valid_set_size, test_set_size])
+            print("my mannnnnnnnnnnnnnnn")
+            # train_set_size = int(len(train_ds) * 0.80)
+            # valid_set_size = (len(train_ds) - train_set_size) // 2
+            # test_set_size =  len(train_ds) - (train_set_size + valid_set_size)
+            # #train_ds, val_ds, test_ds = random_split(train_ds, [train_set_size, valid_set_size, test_set_size])
+            # #train_temp, test_ds = train_test_split(train_ds, [train_set_size, valid_set_size, test_set_size])
+
+            # # Test for subset sampler
+            # print('WARNING WARNING WARNING ON THE SPLIT')
+            # indices = list(range(len(train_ds)))
+            # split_val = len(train_ds) - int(np.floor(0.2 * len(train_ds)))
+            # split_test = split_val + ((len(train_ds)- split_val ) // 2)
+
+            # train_idx, val_idx, test_idx = indices[:split_val], indices[split_val:split_test], indices[split_test:]
+
+            # train_sampler = SubsetRandomSampler(train_idx)
+            # val_sampler = SubsetRandomSampler(val_idx)
+            # test_sampler = SubsetRandomSampler(test_idx)
+
+            # train_ds = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, sampler=train_sampler)
+            # val_ds = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, sampler=val_sampler)
+            # test_ds = torch.utils.data.DataLoader(train_ds, batch_size=batch_size, sampler=test_sampler)
 
         elif test_region == 'kenauk_full':
             # Initiate kenauk full dataset
             # Choosing mask paths by classif mode
+            print("kenauk full test region checkpoint")
 
             # if classif_mode == "bin":
             #     print("binary classification for estrie needs to be verified in utils.py")
@@ -140,14 +376,8 @@ def get_datasets(
             # # #transform=train_transform
             # # )
 
-            # elif classif_mode == "multiclass":
-            #     print("Testing on Kenauk full dataset after training on Estrie dataset for a multiclass classification")
-            #     train_maskdir = k_mask_multi_dir
-
-#TODO classif_mode from datasets SHOULD TAKE CARE OF CHOOSING RIGHT MASK and thus if and elif might be removable
-
             test_kenauk_full_ds = kenauk_rasterio_3_inputs(
-            train_dir=k_img_dir,
+            train_dir=k_test_img,
             classif_mode=classif_mode
             #transform=train_transform
             )
@@ -157,6 +387,37 @@ def get_datasets(
             train_ds, val_ds = random_split(train_ds, [train_set_size, valid_set_size])
             test_ds = test_kenauk_full_ds
 
+            # elif classif_mode == "multiclass":
+            #     print("Testing on Kenauk full dataset after training on Estrie dataset for a multiclass classification")
+            #     train_maskdir = k_mask_multi_dir
+
+#TODO classif_mode from datasets SHOULD TAKE CARE OF CHOOSING RIGHT MASK and thus if and elif might be removable
+
+            # test_kenauk_full_ds = kenauk_rasterio_3_inputs(
+            # train_dir=k_img_dir,
+            # classif_mode=classif_mode
+            # #transform=train_transform
+            # )
+
+            # train_set_size = int(len(train_ds) * 0.80)
+            # valid_set_size = (len(train_ds) - train_set_size)
+            # train_ds, val_ds = random_split(train_ds, [train_set_size, valid_set_size])
+            # test_ds = test_kenauk_full_ds
+
+
+        elif test_region == 'kenauk_2016':
+
+            test_kenauk_2016_ds = kenauk_rasterio_3_inputs(
+            train_dir=k_img_dir,
+            classif_mode=classif_mode
+            #transform=train_transform
+            )
+
+            train_set_size = int(len(train_ds) * 0.80)
+            valid_set_size = (len(train_ds) - train_set_size)
+            train_ds, val_ds = random_split(train_ds, [train_set_size, valid_set_size])
+            test_ds = test_kenauk_2016_ds
+            
         else:
             print("Something is wrong with your Estrie paths")
     
