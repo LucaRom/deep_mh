@@ -17,11 +17,10 @@ if platform == "linux" or platform == "linux2":
     pre_path = "/mnt/Data"
 elif platform == "win32":
     print("Using paths for Windows")
-    pre_path = "D:"
+    pre_path = "D:/"
 else:
     "No platform detected"
 
-## Windows
 # Estrie sentinel 2
 e_sen2_ete = os.path.join(pre_path, "00_Donnees/02_maitrise/01_trainings/estrie/processed_raw/sen2/ete/S2_estrie_3m_ete_septembre2020.tif")
 e_sen2_prin = os.path.join(pre_path, "00_Donnees/02_maitrise/01_trainings/estrie/processed_raw/sen2/print/S2_estrie_3m_printemps_mai2020.tif")
@@ -35,7 +34,8 @@ e_sen1_prin = os.path.join(pre_path, "00_Donnees/02_maitrise/01_trainings/estrie
 # e_tri = "D:/00_Donnees/02_maitrise/01_trainings/estrie/processed_raw/lidar/tri_estrie_3m.tif"
 # e_twi  = "D:/00_Donnees/02_maitrise/01_trainings/estrie/processed_raw/lidar/twi_estrie_3m.tif"
 
-# Estrie sentinel 2
+
+print(e_sen2_ete)
 
 
 # Kenauk 2020 sentinel 2
@@ -95,7 +95,7 @@ ar_k = im_kenauk20.read()
 #print("debug")
 
 # Standardization temp
-ar_k = ar_k.astype('float64')
+ar_k = ar_k.astype('float32')
 
 #print(ar_k[0])
 
@@ -113,18 +113,18 @@ for band in range(len(ar_k)):
 
 
 
-with rasterio.open(
-    's1_kenauk_3m_print_STD.tif',
-    'w',
-    driver='GTiff',
-    height=ar_k.shape[1],
-    width=ar_k.shape[2],
-    count=ar_k.shape[0],
-    dtype=ar_k.dtype,
-    crs=im_kenauk20.crs,
-    transform=im_kenauk20.transform,
-) as dst:
-    dst.write(ar_k)
+# with rasterio.open(
+#     's1_kenauk_3m_print_STD.tif',
+#     'w',
+#     driver='GTiff',
+#     height=ar_k.shape[1],
+#     width=ar_k.shape[2],
+#     count=ar_k.shape[0],
+#     dtype=ar_k.dtype,
+#     crs=im_kenauk20.crs,
+#     transform=im_kenauk20.transform,
+# ) as dst:
+#     dst.write(ar_k)
 
 # print("debug")
 

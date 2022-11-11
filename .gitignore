@@ -2,9 +2,12 @@ __pycache__/
 lightning_logs/
 lightning_logs_backup/
 logs/
+results/
 .git_bckps/
 .vscode/
 *.png
 *.yaml
 *.joblib
+*.tif
+*.tiff
 testground.py
