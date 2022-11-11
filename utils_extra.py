@@ -35,4 +35,27 @@ def create_rasterio_arrays(paths_list):
         for bands in all_bands_arr:
             array_list.append(bands)
         src.close()
-    return array_list   
+    return array_list  
+
+
+# ############# 
+# Unknown stuff 
+# #############
+
+def test_classes_python():
+    all_classes =  [0, 1, 2, 3, 4, 5, 6]
+    predicted_classes = [0, 1, 2, 5]
+    values = [44.44, 22.33, 443.55, 778.45]
+    all_true_values = []
+
+    iter_num = 0
+    for class_num in all_classes:
+        if iter_num < len(predicted_classes):
+            if class_num == predicted_classes[iter_num]:
+                all_true_values.append(values[iter_num])
+                iter_num += 1
+            elif class_num not in predicted_classes:
+                all_true_values.append(0)
+        else:
+            all_true_values.append(0)
+        print(all_true_values)  

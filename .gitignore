@@ -2,6 +2,7 @@ __pycache__/
 lightning_logs/
 lightning_logs_backup/
 logs/
+olds/
 results/
 .git_bckps/
 .vscode/
