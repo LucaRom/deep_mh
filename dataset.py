@@ -144,6 +144,7 @@ class estrie_rasterio_3_inputs(Dataset):
         estrie_lidar_std  = torch.tensor([7.033332, 5.196636, 1.0641352, 0.06102526, 3.182435])
 
         # Cast to tensor for better permute
+        # Permute to from H x W x C to C x H x W
         img_opt = torch.from_numpy(img_opt)
         img_opt = img_opt.permute(2,0,1)
         img_rad = torch.from_numpy(img_rad)
@@ -335,6 +336,87 @@ class kenauk_rasterio_3_inputs(Dataset):
         img_rad = img_rad.permute(2,0,1)
 
         return img_opt, img_lidar, mask, img_rad, sen2_ete_path
+
+class inference_on_full_image_dataset(Dataset): 
+    """ 
+        The folder containing 'sen2_ete' is filtered to respect the wanted files shape for training. If this is not the 
+        case, you need to change '/sen2_ete' from the instance variable 'self.images' called in the init phase of the 
+        class.
+
+    """
+    def __init__(self, stacked_image, transform=None):
+        self.stacked_img = stacked_image
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.stacked_img)
+
+    def __getitem__(self, index):
+        with rasterio.open(self.stacked_img) as ds:
+
+            # sentinel 2 images
+            sen2_ete_img   = ds.read((1,2,3,4,5,6,7,8,9,10,11,12), out_dtype='float32')
+            sen2_print_img = ds.read((13,14,15,16,17,18,19,20,21,22,23,24), out_dtype='float32')
+
+            # sentinel-1 images
+            sen1_ete_img   = ds.read((25,26,27), out_dtype='float32')
+            sen1_print_img = ds.read((28,29,30), out_dtype='float32')
+
+            # lidar images
+            img_mhc    = ds.read((31), out_dtype='float32')
+            img_slopes = ds.read((32), out_dtype='float32')
+            img_tpi    = ds.read((33), out_dtype='float32')
+            img_tri    = ds.read((34), out_dtype='float32')
+            img_twi    = ds.read((35), out_dtype='float32')
+
+        ds.close()
+
+        # normalize the bands
+        # clip the value between [0 - 10000]
+        #TODO function or loop to normalize images instead or repeating
+        # sen2_ete normalization
+        #sen2_ete_img = np.array(tiff.imread(sen2_ete_path), dtype=np.float32)
+
+        # sen2_print normalization
+        #sen2_print_img = np.array(tiff.imread(sen2_print_path), dtype=np.float32)
+        # sen2_print_img = np.where(sen2_print_img < 0, 0, sen2_print_img)  # clip value under 0
+        # sen2_print_img = np.where(sen2_print_img > 10000, 10000, sen2_print_img)  # clip value over 10 000
+        # sen2_print_img = sen2_print_img/10000 # divide the array by 10000 so all the value are between [0-1]
+
+        # stack both sentinel 2 images
+        img_opt = np.dstack((sen2_ete_img, sen2_print_img))
+
+        #img_lidar = np.dstack((img_mnt, img_mhc, img_slopes, img_tpi, img_tri, img_twi))
+        img_lidar = np.dstack((img_mhc, img_slopes, img_tpi, img_tri, img_twi))
+
+        # if img_lidar.dtype != 'float32':
+        #     img_lidar = np.float32(img_lidar) # Only for overlapping dataset #TODO
+        # else:
+        #     pass
+
+
+        img_rad = np.dstack((sen1_ete_img, sen1_print_img)) # stack both sen-1 images
+
+        # Cast to tensor for better permute
+        img_opt = torch.from_numpy(img_opt)
+        img_opt = img_opt.permute(2,0,1)
+
+        # Apply standardization (see : discuss.pytorch.org/t/how-to-normalize-multidimensional-tensor/65304)
+        #img_opt = img_opt.sub_(combined_mean[:, None, None]).div_(combined_std[:, None, None])
+
+        k_lidar_means = torch.tensor([13.348262, 13.45669, -0.006740755, -3.689763, 5.7766604])
+        k_lidar_stds  = torch.tensor([7.7406297, 13.942361, 1.3129127, 241.4134, 5.6496654])
+
+        img_lidar = torch.from_numpy(img_lidar)
+        img_lidar = img_lidar.permute(2,0,1)
+
+        # Standardization
+        img_lidar = img_lidar.sub_(k_lidar_means[:, None, None]).div_(k_lidar_stds[:, None, None])
+
+        img_rad = torch.from_numpy(img_rad)
+        img_rad = img_rad.permute(2,0,1)
+
+        return img_opt, img_lidar, img_rad, sen2_ete_img 
 
 if __name__ == "__main__":
 # Import data with custom loader
