@@ -5,13 +5,11 @@ import rasterio
 import tifffile as tiff
 import time
 
-from itertools import product
-from rasterio import windows
+# internal import
+from img_paths import get_estrie_paths
+
 #from rasterio.windows import Window
 from torch.utils.data import Dataset
-
-
-
 
 class estrie_dataset_unfold(Dataset):
     """ 
@@ -36,7 +34,7 @@ class estrie_dataset_unfold(Dataset):
 
         return img_opt, img_lidar, mask, img_rad, sen2_ete_path
 
-class estrie_dataset_rasterio(Dataset):
+class estrie_dataset_from_nps(Dataset):
     """ 
         Placeholder
     """
@@ -172,15 +170,6 @@ if __name__ == "__main__":
     # pour datasets input avec image full raw
 
     # Definir les paths de chaque image
-    path_to_full_sen2_ete   = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/raw_standard/s2_kenauk_3m_ete_HMe_STD.tif' 
-    path_to_full_sen2_print = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/raw_standard/s2_kenauk_3m_print_HMe_STD.tif' 
-    path_to_full_sen1_ete   = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/raw_standard/s1_kenauk_3m_ete_STD.tif' 
-    path_to_full_sen1_print = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/raw_standard/s1_kenauk_3m_print_STD.tif' 
-    path_to_full_mhc        = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/lidar/mhc_kenauk_3m.tif' 
-    path_to_full_slopes     = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/lidar/pentes_kenauk_3m.tif' 
-    path_to_full_tpi        = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/lidar/tpi_kenauk_3m.tif' 
-    path_to_full_tri        = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/lidar/tri_kenauk_3m.tif' 
-    path_to_full_twi        = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/kenauk/processed_raw/lidar/twi_kenauk_3m.tif' 
 
     # Calculer les statistiques generales 
 
@@ -189,103 +178,74 @@ if __name__ == "__main__":
         # Autres?
 
 
-    # Definir le datasets
+    # Loading paths and images
+    paths_lst = get_estrie_paths()
+    sen2_paths = paths_lst[0:2]
+    sen1_paths = paths_lst[2:4]
+    mhc_paths  = paths_lst[4]
+    slo_paths  = paths_lst[5]
+    tpi_paths  = paths_lst[6]
+    tri_paths  = paths_lst[7]
+    twi_paths  = paths_lst[8]
 
-    # paths_list = [path_to_full_sen2_ete, path_to_full_sen2_print, path_to_full_sen1_ete, path_to_full_sen1_print, 
-    #             path_to_full_mhc, path_to_full_slopes, path_to_full_tpi, path_to_full_tri, path_to_full_twi]
+    loads_paths_len = len(sen2_paths) + len(sen1_paths) + len([mhc_paths]) + len([slo_paths]) + len([tpi_paths]) \
+                      + len([tri_paths]) + len([twi_paths])
 
-    # paths_list = [path_to_full_sen2_ete, path_to_full_sen2_print]
-    
-    # print(paths_list)
-    # print(paths_list[0:4])
+    assert len(paths_lst) ==  loads_paths_len, f'Got a list of {len(paths_lst)}, but loaded {loads_paths_len}'
+
+    def create_tifffile_arrays(paths_list):
+        array_list = []
+        for path in paths_list:
+            print("Processing : ", path)
+            array_list.append(np.array(tiff.imread(path), dtype=np.float32))
+        return array_list
+
+    def save_np_intermediate_arr(arr, obj_name):
+        print('Saving obj_name with ', len(arr), 'images')
+        save_path = time.strftime('results/' + obj_name + '_' + '%Y-%m-%d_%H-%M-%S', time.localtime())
+        np.savez(save_path, arr)
+
+    # Create and store Sen2 arrays
+    #save_np_intermediate_arr(create_tifffile_arrays(sen2_paths), 'e_sen2_raw')
+
+    # Create and store Sen1 arrays
+    save_np_intermediate_arr(create_tifffile_arrays(sen1_paths), 'e_sen1_raw')
+
+    # Create and store Lidar arrays arrays
+    #save_np_intermediate_arr(create_tifffile_arrays(paths_lst[4:9]), 'e_lidar_raw')
+
+
+    # # load np
+    # print('loading numpies')
+    # sen2 = np.load('results/sen2_raw_2022-11-09_23-26-04.npy') # Output I x C x H x W (I = number of file arrays)
+    # sen2_trans = np.transpose(sen2, (0, 3, 1, 2))
+
+    # def sliding_window(image, stepSize_y, stepSize_x, windowSize):
+    #     # slide a window across the image
+    #     for y in range(0, image.shape[2], stepSize_y):
+    #         for x in range(0, image.shape[1], stepSize_x):
+    #             # yield the current window
+    #             yield (x, y, image[:, y:y + windowSize[1], x:x + windowSize[0]])
+
     # print()
 
-    # Ouvrir les fichiers et faire les stacks
-     
-    # Load images
-    # src_sen2_ete = rasterio.open(path_to_full_sen2_ete)
-    # src_sen2_pri = rasterio.open(path_to_full_sen2_print)
-    # src_sen1_ete = rasterio.open(path_to_full_sen1_ete)
-    # src_sen1_pri = rasterio.open(path_to_full_sen1_print)
-    # src_mhc = rasterio.open(path_to_full_mhc)
-    # src_slo = rasterio.open(path_to_full_slopes)
-    # src_tpi = rasterio.open(path_to_full_tpi)
-    # src_tri = rasterio.open(path_to_full_tri)
-    # src_twi = rasterio.open(path_to_full_twi)
+    # sen2_ete = np.transpose(sen2[0],(1,2,0))
+    # sen2_print = np.transpose(sen2[1],(1,2,0))
 
-    # def create_rasterio_arrays(paths_list):
-    #     array_list = []
-    #     for path in paths_list:
-    #         print("Processing : ", path)
-    #         src = rasterio.open(path)
-    #         all_bands_arr = src.read(out_dtype=np.float32)
-    #         for bands in all_bands_arr:
-    #             array_list.append(bands)
-    #         src.close()
-    #     return array_list       
+    # sen2_ete_2 = sen2[0]
+    # sen2_print_2 = sen2[1]
 
-    # def create_tifffile_arrays(paths_list):
-    #     array_list = []
-    #     for path in paths_list:
-    #         print("Processing : ", path)
-    #         array_list.append(np.array(tiff.imread(path), dtype=np.float32))
-    #     return array_list
+    # senstack = np.dstack((sen2_ete, sen2_print))
 
-    # stack = create_tifffile_arrays(paths_list)
-    # nb_bands = len(stack)
-    # sensors_name = 'sen2_raw'
+    # senstack2 = np.stack((sen2_ete_2, sen2_print_2))
 
-    # save_path = time.strftime('results/' + sensors_name + '_' + '%Y-%m-%d_%H-%M-%S', time.localtime())
-
-    # np.save(save_path, stack)
-
-    # load np
-    print('loading numpies')
-    sen2 = np.load('results/sen2_raw_2022-11-09_23-26-04.npy')
-    sen2 = np.transpose(sen2, (0, 3, 1, 2))
-
-    def iter_windows_rasterio(src_ds, width, height, boundless=False):
-        offsets = product(range(0, src_ds.meta['width'], width), range(0, src_ds.meta['height'], height))
-        big_window = windows.Window(col_off=0, row_off=0, width=src_ds.meta['width'], height=src_ds.meta['height'])
-        for col_off, row_off in offsets:
-
-            window = windows.Window(col_off=col_off, row_off=row_off, width=width, height=height)
-
-            if boundless:
-                yield window
-            else:
-                yield window.intersection(big_window)
-
-    def iter_windows_rasterio_shape(src_ds, width, height, boundless=False):
-        offsets = product(range(0, src_ds.shape[0], width), range(0, src_ds.shape[1], height))
-        big_window = windows.Window(col_off=0, row_off=0, width=src_ds.shape[0], height=src_ds.shape[1])
-        for col_off, row_off in offsets:
-
-            window = windows.Window(col_off=col_off, row_off=row_off, width=width, height=height)
-
-            if boundless:
-                yield window
-            else:
-                yield window.intersection(big_window)
-
-    def sliding_window(image, stepSize_y, stepSize_x, windowSize):
-        # slide a window across the image
-        for y in range(0, image.shape[2], stepSize_y):
-            for x in range(0, image.shape[1], stepSize_x):
-                # yield the current window
-                yield (x, y, image[y:y + windowSize[1], x:x + windowSize[0]])
-
-    print()
-
-    sliding_half = sliding_window(sen2[0], stepSize_y=256, stepSize_x=128, windowSize=(256, 256))
-    sliding = sliding_window(sen2[0], stepSize_y=256, stepSize_x=256, windowSize=(256, 256))
-
-    print(len(list(sliding_half)))
-    print(len(list(sliding)))
+    # sliding_half = sliding_window(sen2[0], stepSize_y=256, stepSize_x=128, windowSize=(256, 256))
+    # sliding = sliding_window(sen2[0], stepSize_y=256, stepSize_x=256, windowSize=(256, 256))
 
 
-    print('testing balls')
 
-    test_my_balls = iter_windows_rasterio_shape(sen2[0], 256, 256)
+    # print(len(list(sliding_half)))
+    # print(len(list(sliding)))
 
-    print(test_my_balls)
+
+    # print('testing balls')
