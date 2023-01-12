@@ -8,10 +8,18 @@ import rasterio
 import img_paths
 import matplotlib.pyplot as plt
 import tifffile as tiff
+import rasterio
 from rasterio import windows
 from rasterio.windows import Window
 from itertools import product
 from tqdm import tqdm
+
+
+from torchmetrics import ConfusionMatrix
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report
+
+
+import copy
 
 # Define all paths
 # Paths (linux)
@@ -109,7 +117,9 @@ def get_project_labels():
 def get_tiled_datasets_estrie(
     input_format,
     classif_mode,
+    test_mask_dir,
     batch_size,
+    dataset_size,
     #train_transform,
     #val_transform,
     num_workers=1,
@@ -122,6 +132,7 @@ def get_tiled_datasets_estrie(
     elif input_format == 'estrie_over50p':
         paths_list = img_paths.estrie_256over50p_paths_lst
 
+    print()
     print("Using following path as root for training dataset : ")
     print(paths_list[0])
 
@@ -163,6 +174,16 @@ def get_tiled_datasets_estrie(
         stdev_lst=stdev_lst
     )
 
+    if test_mask_dir == '3223_full':
+        train_ds_test =  estrie_rasterio_3_inputs(    
+        train_dir=img_train_dir,
+        classif_mode=classif_mode,
+        test_mask_dir=test_mask_dir,
+        #transform=train_transform
+        mean_lst=mean_lst,
+        stdev_lst=stdev_lst
+        )
+
     # Creating train, val, test datasets
     # Spliting Test dataset out and generating random train and val from rest of indices
     # #TODO better coding
@@ -171,6 +192,7 @@ def get_tiled_datasets_estrie(
     print("Test dataset is split alone before train and val to avoid model seeing parts of the test tiles from "
           "the overlapping when selected completely randomly")
     print('*******************************')
+    print()
 
     # Defining indices
     #indices = list(range(len(train_ds)))
@@ -187,11 +209,32 @@ def get_tiled_datasets_estrie(
     # random.shuffle(indices_train_val) # Shuffling train and val only
     # split_val_rd = len(indices_train_val) - int(np.floor(0.2 *len(indices_train_val)))
 
-    trainval_idx_lst = np.load('results/estrie_trainval_idx_list.npy')
-    test_idx_lst = np.load('results/estrie_test_idx_list.npy')
+    # trainval_idx_lst = np.load('results/estrie_trainval_idx_list.npy')
+    # test_idx_lst = np.load('results/estrie_test_idx_list.npy')
+
+    trainval_idx_lst = np.load('results/estrie_trainval_idx_v15.npy')
+    test_idx_lst = np.load('results/estrie_test_idx_v15.npy')
+
+    # trainval_idx_lst = np.load('results/estrie_trainval_idx_list_trimmed.npy')
+    # test_idx_lst = np.load('results/estrie_test_idx_list_trimmed.npy')
 
     shuffled_trainval = np.random.permutation(trainval_idx_lst)
     val_size = round(len(trainval_idx_lst)*0.1) #10%
+
+    if dataset_size == 'small':
+        print()
+        print('WARNING WARNING')
+        print('WARNING WARNING')
+        print('USING SMALL DATASET FOR TESTING, PLEASE BE SURE IT IS INTENDED')
+        print('WARNING WARNING')
+        print('WARNING WARNING')
+        print()
+        shuffled_trainval = np.random.choice(shuffled_trainval, 150)
+        val_size = round(len(shuffled_trainval)*0.1) #10%
+        test_idx_lst = np.random.choice(shuffled_trainval, 30)
+    else:
+        shuffled_trainval = shuffled_trainval 
+
 
     val_idx = shuffled_trainval[:val_size]
     train_idx = [x for x in shuffled_trainval if x not in val_idx]
@@ -215,7 +258,10 @@ def get_tiled_datasets_estrie(
     val_loader = DataLoader(train_ds, batch_size=batch_size, num_workers=0, pin_memory=pin_memory, 
                             sampler=val_sampler)
 
-    test_loader = DataLoader(train_ds, batch_size=1, num_workers=0, pin_memory=False, sampler=test_sampler)
+    if test_mask_dir == '3223_full':
+        test_loader = DataLoader(train_ds_test, batch_size=1, num_workers=0, pin_memory=False, sampler=test_sampler)
+    else:
+        test_loader = DataLoader(train_ds, batch_size=1, num_workers=0, pin_memory=False, sampler=test_sampler)
 
     return train_loader, val_loader, test_loader
 
@@ -1070,14 +1116,27 @@ def get_datasets_inference(
 #     return train_loader, val_loader, test_loader
 
 
-def iter_windows(src_ds, stepsize, width, height, strict_shape=True, boundless=False):
+# The offset range are reajusted with the step size to avoid extra tiles beng created when reaching the end of the image
+# but the start position of the tile is still inside.
+# TODO see if there is any case that strict_shape would not handle all boundless cases
+#def iter_windows(src_ds, stepsize, width, height, strict_shape=True, boundless=False):
+def iter_windows(src_ds, stepsize, width, height, strict_shape=True, boundless=True):
     # offsets creates tuples for col_off, row_off
-    offsets = product(range(0, src_ds.meta['width'], stepsize), range(0, src_ds.meta['height'], stepsize))
+    #offsets = product(range(0, src_ds.meta['width']-stepsize, stepsize), range(0, src_ds.meta['height']-stepsize, stepsize))
+    offsets = product(range(0, src_ds.meta['height']-128, stepsize), range(0, src_ds.meta['width']-128, stepsize))
     big_window = windows.Window(col_off=0, row_off=0, width=src_ds.meta['width'], height=src_ds.meta['height'])
 
+
     # Creates windows from offsets as start pixels and uses specified window size
-    for col_off, row_off in offsets:
+    # You can switch col_off and row_off depending of the wanted sliding window direction
+    #for col_off, row_off in offsets:
+    for row_off, col_off in offsets:
+        #print(col_off, row_off)
         window = windows.Window(col_off=col_off, row_off=row_off, width=width, height=height)
+        transform = windows.transform(window, src_ds.transform)
+
+        # if col_off > src_ds.meta['width']+256:
+        #     print()
 
         if boundless:
             window = window
@@ -1086,69 +1145,387 @@ def iter_windows(src_ds, stepsize, width, height, strict_shape=True, boundless=F
 
         # Strict shape limits output windows with only width x height shape
         if strict_shape:
-            if window.width < width or window.height < height:
+            #if window.width < width or window.height < height:
+            if row_off + 256 > src_ds.meta['width'] or col_off + 256 > src_ds.meta['height']:
+                #print(col_off, row_off)
                 pass
             else:
                 yield window
+        else:
+            yield window
+        #         pass
+        #     else:
+        #         yield window, transform
+        # else:
+        #     yield window, transform
 
 if __name__ == "__main__":
     
     # Create mask and zones stack
-    def create_stack_mask_zones(mask_path, zones_path):
+    def create_stack_mask_zones(mask_path, zones_path, out_name, antimask_path=None):
         mask_im  = np.array(tiff.imread(mask_path), dtype=np.float32)
         zones_im = np.array(tiff.imread(zones_path), dtype=np.float32)
-
-        stacked_img = np.dstack((mask_im, zones_im))
+        if antimask_path:
+            anti_im = np.array(tiff.imread(antimask_path), dtype=np.float32)
+            stacked_img = np.dstack((mask_im, zones_im, anti_im))
+        else:
+            stacked_img = np.dstack((mask_im, zones_im))
+            
         stacked_img = stacked_img.transpose(2,0,1)
 
         with rasterio.open(mask_path) as ds:
             profile = ds.profile
-            profile['count'] = 2  # 2 bands
-            with rasterio.open('./results/stack_mask_zones.tif', "w", **profile) as out_ds:
+            profile['count'] = stacked_img.shape[0]  # 2 bands
+            with rasterio.open(out_name, "w", **profile) as out_ds:
                 out_ds.write(stacked_img)
 
-    mask_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processed_raw/mask/estrie_mask_multiclass_3m_9c.tif'
-    zones_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processed_raw/zones/zones_limits.tif'
+    #mask_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processed_raw/mask/estrie_mask_multiclass_3m_9c.tif'
+    # mask_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processed_raw/mask/estrie_mask_multiclass_3223_3m_9c.tif'
+    # zones_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processed_raw/zones/zones_limits.tif'
+    #antimask_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processed_raw/mask/estrie_mask_multiclass_11_3m_9c.tif'
 
-    #create_stack_mask_zones(mask_path, zones_path)
+    # v15
+    mask_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processed_raw/mask/estrie_mask_multiclass_3223_3m_9c.tif'
+    zones_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processed_raw/zones/test_zone_estrie_v03.tif'
+    out_name = './results/stack_mask3223_testzone_v03.tif'
+
+    #create_stack_mask_zones(mask_path, zones_path, out_name)
+
 
     # Generate train/val and test indexes from zones and mask
-    def generate_indexes(img_path, wd_size, step_size):
+    def generate_indexes(img_path, wd_size, step_size, trim_background=True):
         with rasterio.open(img_path) as ds:
-            windows_num = len(list(iter_windows(ds, step_size, wd_size, wd_size)))
+            windows_num = len(list(iter_windows(ds, step_size, wd_size, wd_size, strict_shape=False)))
             #indices_ori = list(range(windows_num))
             test_indices = []
             train_indices = []
             full_nh_tiles_idx = []
-            for idx, a_window in tqdm(enumerate(iter_windows(ds, step_size, wd_size, wd_size)), total=windows_num, desc='Windows'):
+            bad_conf_list = []
+            removed = []
+            for idx, a_window in tqdm(enumerate(iter_windows(ds, step_size, wd_size, wd_size, strict_shape=False)), total=windows_num, desc='Windows'):
                     mask = ds.read(1, window=a_window)
                     zones = ds.read(2, window=a_window)
+                    #bad_conf = ds.read(3, window=a_window)
 
                     nh_pixels = np.count_nonzero(mask == 7)
                     test_pixels = np.count_nonzero(zones == 1)
+                    #bad_conf_pixels = np.count_nonzero(bad_conf != 7)
+
+                    # DEBUG
+                    #np.unique(bad_conf, return_counts=True)
 
                     tile_pixels_num = wd_size * wd_size
-
-                    if test_pixels == tile_pixels_num:
-                        test_indices.append(idx)
-                    elif nh_pixels == tile_pixels_num:
-                        full_nh_tiles_idx.append(idx)
+                    if a_window.col_off + 256 > ds.meta['width'] or a_window.row_off + 256 > ds.meta['height']:
+                        removed.append(idx)
                     else:
-                        train_indices.append(idx)
-            
-            # print('Original indices len :', len(indices_ori))
-            # print('Train val idx len:', len(train_indices))
-            # print('Test idx len :', len(test_indices))
-            # print('Full NH idx len :', len(full_nh_tiles_idx))
+                        if test_pixels == tile_pixels_num:
+                            test_indices.append(idx)
+                        # elif bad_conf_pixels > 10:
+                        #     bad_conf_list.append(idx)
+                        #     #print(idx, bad_conf_pixels)
+                        elif trim_background and nh_pixels == tile_pixels_num:
+                            full_nh_tiles_idx.append(idx)
+                        else:
+                            train_indices.append(idx)
 
-            np.save('results/estrie_trainval_idx_list', train_indices)
-            np.save('results/estrie_test_idx_list', test_indices)
+            #print('Original indices len :', len(indices_ori))
+            print('Train val idx len:', len(train_indices))
+            print('Test idx len :', len(test_indices))
+            print('Removed idx len :', len(removed))
+            print('Bad_conf len :', len(bad_conf_list))
+            print('Total kept idx :', len(train_indices) + len(test_indices))
+            print('Total number of idx :', len(train_indices) + len(test_indices) + len(removed) + len(bad_conf_list))
+            print('Full NH idx len :', len(full_nh_tiles_idx))
+
+            # if trim_background:
+            #     trainval_idx_path = 'results/estrie_trainval_idx_list_trimmed'
+            #     test_idx_path = 'results/estrie_test_idx_list_trimmed'
+            # else :
+            trainval_idx_path = 'results/estrie_trainval_idx_v15'
+            test_idx_path = 'results/estrie_test_idx_v15'
+
+            np.save(trainval_idx_path, train_indices)
+            np.save(test_idx_path, test_indices)
 
 
-    img_path = 'results/stack_mask_zones.tif'
+    img_path = 'results/stack_mask3223_testzone_v03.tif'
 
-    #generate_indexes(img_path, wd_size=256, stepsize=128)
+    #generate_indexes(img_path, wd_size=256, step_size=128, trim_background=False)
 
+    #print('test idx lenght :', len(np.load('results/estrie_test_idx_v15.npy')))
+    #print('train idx lenght :', len(np.load('results/estrie_trainval_idx_v15.npy')))
+
+
+    ####################################
+    # Create stack no mask (inference) #
+    ####################################
+
+    # # sen2 ete imgs
+    # path_sen2_ete = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processed_raw/sen2_ete/S2_estrie_3m_ete_septembre2020.tif'
+
+    # # sen2_ete clipping
+    # #sen2_ete_img = np.array(tiff.imread(path_sen2_ete), dtype=np.float32)
+    # sen2_ete_ras = rasterio.open(path_sen2_ete)
+    # sen2_ete_img = sen2_ete_ras.read()
+    # sen2_ete_img = np.where(sen2_ete_img < 0, 0, sen2_ete_img)  # clip value under 0
+    # sen2_ete_img = np.where(sen2_ete_img > 10000, 10000, sen2_ete_img)  # clip value over 10 000
+
+    # # Apply standardization on optic but not indices
+    # sen2_e_mean = np.mean(sen2_ete_img, axis=(1,2), dtype=np.float64, keepdims=True)
+    # std_sen2_ete_img = np.sqrt(((sen2_ete_img - sen2_e_mean)**2).mean((1,2), keepdims=True))
+    # sted_e_sen2 = (sen2_ete_img - sen2_e_mean) / std_sen2_ete_img
+    # del sen2_ete_img, sen2_e_mean, std_sen2_ete_img
+
+    # #output = np.stack((sted_e_sen2, sted_p_sen2, ndvi_e, ndvi_p), axis=0)
+
+    # with rasterio.open(
+    #     'results/standardized/s2_estrie_3m_e_stded.tif',
+    #     'w',
+    #     driver='GTiff',
+    #     height=sted_e_sen2.shape[1],
+    #     width=sted_e_sen2.shape[2],
+    #     count=sted_e_sen2.shape[0],
+    #     dtype='float32',
+    #     crs=sen2_ete_ras.crs,
+    #     transform=sen2_ete_ras.transform,
+    # ) as dst:
+    #     dst.write(sted_e_sen2)
+
+    # del sted_e_sen2
+    # sen2_ete_ras.close()
+
+    # # sen2 print imgs
+    # path_sen2_pri = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processed_raw/sen2_pri/S2_estrie_3m_printemps_mai2020.tif'
+
+    # # sen2_pri clipping
+    # # sen2_print_img = np.array(tiff.imread(path_sen2_pri), dtype=np.float32)
+    # sen2_pri_ras = rasterio.open(path_sen2_pri)
+    # sen2_pri_img = sen2_pri_ras.read()
+    # sen2_pri_img  = np.where(sen2_pri_img < 0, 0, sen2_pri_img)  # clip value under 0
+    # sen2_pri_img  = np.where(sen2_pri_img  > 10000, 10000, sen2_pri_img )  # clip value over 10 000
+
+    # # Create indices for sen2_ete
+    # #NDVI (NIR - R) / (NIR + R) | (8 - 4) / (8 + 4)
+    # # sen2_pri_ind = sen2_pri_img 
+    # # ndvi_p = (sen2_pri_ind[7] - sen2_pri_ind[3]) / (sen2_pri_ind[7] + sen2_pri_ind[3])
+    # # ndvi_p = np.expand_dims(ndvi_p, axis=0)
+    # # ndvi_p = np.nan_to_num(ndvi_p, -1)
+
+    # # Apply standardization on optic but not indices
+    # sen2_p_mean = np.mean(sen2_pri_img , axis=(1,2), dtype=np.float64, keepdims=True)
+    # std_sen2_pri_img = np.sqrt(((sen2_pri_img  - sen2_p_mean)**2).mean((1,2), keepdims=True))
+    # sted_p_sen2 = (sen2_pri_img  - sen2_p_mean) / std_sen2_pri_img
+    # del sen2_pri_img, sen2_p_mean, std_sen2_pri_img
+
+    # with rasterio.open(
+    #     'results/standardized/s2_estrie_3m_p_stded.tif',
+    #     'w',
+    #     driver='GTiff',
+    #     height=sted_p_sen2.shape[1],
+    #     width=sted_p_sen2.shape[2],
+    #     count=sted_p_sen2.shape[0],
+    #     dtype='float32',
+    #     crs=sen2_pri_ras.crs,
+    #     transform=sen2_pri_ras.transform,
+    # ) as dst:
+    #     dst.write(sted_p_sen2)
+
+    # del sted_p_sen2
+    # sen2_pri_ras.close()
+
+    # # sen2 ete NDVI
+    # path_sen2_ete = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processed_raw/sen2_ete/S2_estrie_3m_ete_septembre2020.tif'
+
+    # # sen2_ete clipping
+    # sen2_ete_img = np.array(tiff.imread(path_sen2_ete), dtype=np.float32)
+    # sen2_ete_img = sen2_ete_img.transpose(2,0,1)
+    # sen2_ete_ras = rasterio.open(path_sen2_ete)
+    # # sen2_ete_img = sen2_ete_ras.read()
+    # sen2_ete_img = np.where(sen2_ete_img < 0, 0, sen2_ete_img)  # clip value under 0
+    # sen2_ete_img = np.where(sen2_ete_img > 10000, 10000, sen2_ete_img)  # clip value over 10 000
+
+    # # Create indices for sen2_ete
+    # # NDVI (NIR - R) / (NIR + R) | (8 - 4) / (8 + 4)
+    # #sen2_ete_ind = sen2_ete_img.astype(float)
+    # sen2_ete_ind = sen2_ete_img
+    # ndvi_e = (sen2_ete_ind[7] - sen2_ete_ind[3]) / (sen2_ete_ind[7] + sen2_ete_ind[3])
+    # ndvi_e = np.expand_dims(ndvi_e, axis=0)
+    # ndvi_e = np.nan_to_num(ndvi_e, -1)
+
+    # #profile = sen2_ete_ras.profile
+    # #profile.update(dtype=ndvi_e.dtype, nodata=99, count=1, height=ndvi_e.shape[1], width=ndvi_e.shape[2])
+
+    # with rasterio.open(
+    #     'results/standardized/s2_estrie_3m_e_NDVI.tif',
+    #     'w', 
+    #     driver='GTiff',
+    #     height=ndvi_e.shape[1],
+    #     width=ndvi_e.shape[2],
+    #     count=1,
+    #     dtype=ndvi_e.dtype,
+    #     crs=sen2_ete_ras.crs,
+    #     transform=sen2_ete_ras.transform,
+    # ) as dst:
+    #     dst.write(ndvi_e)
+
+    # del sen2_ete_img, sen2_ete_ind, ndvi_e
+    # sen2_ete_ras.close()
+
+    # # NDVI sen2_print
+    # # sen2 print imgs
+    # path_sen2_pri = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processed_raw/sen2_pri/S2_estrie_3m_printemps_mai2020.tif'
+
+    # # sen2_pri clipping
+    # sen2_pri_img = np.array(tiff.imread(path_sen2_pri), dtype=np.float32)
+    # sen2_pri_img = sen2_pri_img.transpose(2,0,1)
+    # sen2_pri_ras = rasterio.open(path_sen2_ete)
+    # #sen2_pri_img = sen2_pri_ras.read()
+    # sen2_pri_img  = np.where(sen2_pri_img < 0, 0, sen2_pri_img)  # clip value under 0
+    # sen2_pri_img  = np.where(sen2_pri_img  > 10000, 10000, sen2_pri_img )  # clip value over 10 000
+
+    # # Create indices for sen2_ete
+    # #NDVI (NIR - R) / (NIR + R) | (8 - 4) / (8 + 4)
+    # sen2_pri_ind = sen2_pri_img 
+    # ndvi_p = (sen2_pri_ind[7] - sen2_pri_ind[3]) / (sen2_pri_ind[7] + sen2_pri_ind[3])
+    # ndvi_p = np.expand_dims(ndvi_p, axis=0)
+    # ndvi_p = np.nan_to_num(ndvi_p, -1)
+
+    # with rasterio.open(
+    #     'results/standardized/s2_estrie_3m_p_NDVI.tif',
+    #     'w',
+    #     driver='GTiff',
+    #     height=ndvi_p.shape[1],
+    #     width=ndvi_p.shape[2],
+    #     count=1,
+    #     dtype=ndvi_p.dtype,
+    #     crs=sen2_pri_ras.crs,
+    #     transform=sen2_pri_ras.transform,
+    # ) as dst:
+    #     dst.write(ndvi_p)
+
+    # del sen2_pri_img, sen2_pri_ind, ndvi_p
+    # sen2_pri_ras.close()
+
+    ############################
+    # Estrie main stack        #
+    ############################
+
+    # # load sen2 ete print
+    # # paths
+    # sen2_e_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processes_raw_clipped_to_test/test_v1_clip_s2_estrie_3m_e.tif'
+    # sen2_p_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processes_raw_clipped_to_test/test_v1_clip_s2_estrie_3m_p.tif'
+
+    # # load
+    # sen2_e_img = np.array(tiff.imread(sen2_e_path), dtype=np.float32)
+    # sen2_p_img = np.array(tiff.imread(sen2_p_path), dtype=np.float32)
+    # sen2_e_img = sen2_e_img.transpose(2,0,1)
+    # sen2_p_img = sen2_p_img.transpose(2,0,1)
+    # print('done sen2')
+
+    # # # load ndvi ete print
+    # # # paths
+    # # sen2_ndvi_e_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processes_raw_clipped_to_test/test_v1_clip_s2_estrie_3m_e_NDVI.tif'
+    # # sen2_ndvi_p_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processes_raw_clipped_to_test/test_v1_clip_s2_estrie_3m_p_NDVI.tif'
+
+    # # # load
+    # # sen2_e_ndvi_img = np.array(tiff.imread(sen2_ndvi_e_path), dtype=np.float32)
+    # # sen2_p_ndvi_img = np.array(tiff.imread(sen2_ndvi_p_path), dtype=np.float32)
+    # # sen2_e_ndvi_img = np.expand_dims(sen2_e_ndvi_img, axis=0)
+    # # sen2_p_ndvi_img = np.expand_dims(sen2_p_ndvi_img, axis=0)
+
+    # #print('done ndvi')
+
+    # # load sentinel1
+    # # paths
+    # sen1_e_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processes_raw_clipped_to_test/test_v1_clip_S1_estrie_3m_ete_septembre2020.tif'
+    # sen1_p_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processes_raw_clipped_to_test/test_v1_clip_S1_estrie_3m_printemps_mai2020.tif'
+
+    # # load
+    # sen1_e_img = np.array(tiff.imread(sen1_e_path), dtype=np.float32)
+    # sen1_p_img = np.array(tiff.imread(sen1_e_path), dtype=np.float32)
+    # sen1_e_img = sen1_e_img.transpose(2,0,1)
+    # sen1_p_img = sen1_p_img.transpose(2,0,1)
+
+    # print('done sen1')
+
+    # # load lidar 
+    # # paths
+    # mhc_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processes_raw_clipped_to_test/test_v1_clip_mhc_estrie_3m.tif'
+    # slo_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processes_raw_clipped_to_test/test_v1_clip_pente_estrie_3m.tif'
+    # tpi_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processes_raw_clipped_to_test/test_v1_clip_tpi_estrie_3m.tif'
+    # tri_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processes_raw_clipped_to_test/test_v1_clip_tri_estrie_3m.tif'
+    # twi_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processes_raw_clipped_to_test/test_v1_clip_twi_estrie_3m.tif'
+
+    # img_mhc = np.array(tiff.imread(mhc_path))
+    # img_mhc = np.expand_dims(img_mhc, axis=0)
+
+    # img_slopes = np.array(tiff.imread(slo_path))
+    # img_slopes = np.expand_dims(img_slopes, axis=0)
+
+    # img_tpi = np.array(tiff.imread(tpi_path))
+    # img_tpi = np.expand_dims(img_tpi, axis=0)
+
+    # img_tri = np.array(tiff.imread(tri_path))
+    # img_tri = np.expand_dims(img_tri, axis=0)
+
+    # img_twi = np.array(tiff.imread(twi_path))
+    # img_twi = np.expand_dims(img_twi, axis=0)
+    # print('done LiDAR')
+
+    # # stack IT!
+    # #full_img = np.vstack((sen2_e_img, sen2_p_img, sen2_e_ndvi_img, sen2_p_ndvi_img, sen1_e_img, sen1_p_img, img_mhc, img_slopes, img_tpi, img_tri, img_twi))
+    # full_img = np.vstack((sen2_e_img, sen2_p_img, sen1_e_img, sen1_p_img, img_mhc, img_slopes, img_tpi, img_tri, img_twi))
+
+    # for_profile = rasterio.open(sen2_e_path)
+
+    # with rasterio.open(
+    #     'results/standardized/full_test_v2_stack.tif',
+    #     'w',
+    #     driver='GTiff',
+    #     height=full_img.shape[1],
+    #     width=full_img.shape[2],
+    #     count=full_img.shape[0],
+    #     dtype=full_img.dtype,
+    #     crs=for_profile.crs,
+    #     transform=for_profile.transform,
+    # ) as dst:
+    #     dst.write(full_img)
+
+    # print(full_img.shape)
+
+    ############################
+    # Create tiles             #
+    ############################
+
+    # path_to_images = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/processed_raw/mask/estrie_mask_multiclass_3m_9c.tif'
+
+    # step_size = 128
+    # wd_size = 256
+    
+
+    # with rasterio.open(path_to_images) as ds:
+    #     profile = ds.profile
+    #     profile['count'] = 1  # assume output is a single band raster
+
+    #     meta = ds.meta.copy()
+    #     meta['crs'] = rasterio.crs.CRS.from_proj4('+proj=lcc +lat_0=44 +lon_0=-68.5 +lat_1=60 +lat_2=46 +x_0=0 +y_0=0 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs +type=crs')
+        
+    #     idx = 0
+
+    #     #for idx, a_window, transform in tqdm(enumerate(iter_windows(ds, step_size, wd_size, wd_size, strict_shape=False)), total=len(list(iter_windows(ds, step_size, wd_size, wd_size, strict_shape=False))), desc='Creating tiles'):
+    #     for a_window, transform in iter_windows(ds, step_size, wd_size, wd_size, strict_shape=False):
+    #         meta['transform'] = transform
+    #         print(transform)
+    #         meta['width'], meta['height'] = 256, 256
+    #         print(meta)
+    #         with rasterio.open('mask_9c_tiles_from_python/mask' + str(idx) + '.tif', 'w', **meta) as out_ds:
+    #             tile_out = ds.read(1, window=a_window)
+    #             out_ds.write(tile_out, 1)
+    #             idx += 1
+
+    # with rasterio.open(path_to_images) as ds:
+    #     for a_window, transform in iter_windows(ds, step_size, wd_size, wd_size, strict_shape=False):
+    #         print(a_window)
 
     ############################
     # Sanity check draft below #
@@ -1159,7 +1536,7 @@ if __name__ == "__main__":
     # test_region = "local_split"
 
     # num_epochs = 10
-    # classif_mode = "bin"
+    # classif_mode = "multiclass"
     # BATCH_SIZE = 6
 
     # PIN_MEMORY = True
@@ -1205,11 +1582,13 @@ if __name__ == "__main__":
     # # Image masque
     # mask = mask[0]
 
-
-    # for im in im_lidar:
-    #     plt.imshow(im)
-    #     plt.show()
-    #     plt.close()
+    # f = plt.figure(1)
+    # plt.imshow(stack_sen2_ete)
+    # f.show()
+    # g = plt.figure(2)
+    # plt.imshow(mask)
+    # g.show()
+    #plt.close()
 
     # # Generating figures
     # fig = plt.figure(figsize=(15, 5))
@@ -1233,3 +1612,71 @@ if __name__ == "__main__":
     # axes[0].set_title('Sen2 Input')
     # axes[1].set_title('Predicted')
     # axes[2].set_title('Target')
+
+    ############################
+    # Argmax on prob raster    #
+    ############################
+
+    # raster_path = 'results/inference/version_13_step_93100_07_12_2022_softmax.tif'
+
+    # raster_prob = np.array(tiff.imread(raster_path), dtype=np.float32)
+
+    # raster_prob = np.moveaxis(raster_prob, -1, 0)
+
+    # preds = raster_prob[:9,:,:]
+    # preds_sig = np.argmax(preds, axis=0)
+    # preds_sig = np.expand_dims(preds_sig, axis=0)
+
+    # for_profile = rasterio.open(raster_path)
+
+    # profile = for_profile.profile
+    # profile['count'] = 1
+    # profile['nodata'] = 9999
+
+    # with rasterio.open(
+    #     'results/inference/version_13_step_93100_07_12_2022_softmax_argmax.tif',
+    #     'w',
+    #     BIGTIFF=True,
+    #     **profile
+    #     ) as dst:
+    #     dst.write(preds_sig)
+
+    ############################
+    # Accu assess    #
+    ############################
+
+    #pred_path = 'results/inference/version_13_step_86583_test_argmax.tif'
+    # pred_path = 'results/inference/version_13_step_93100_07_12_2022_argmax.tif'
+    # mask_path = 'results/inference/version_13_step_86583_test_argmax_TRUTH.tif'
+
+    # load_pred = rasterio.open(pred_path)
+    # load_mask = rasterio.open(mask_path)
+
+    # device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+
+    # read_pred = load_pred.read().squeeze()
+    # read_pred = torch.tensor(read_pred).type(torch.IntTensor)
+    # read_mask = torch.tensor(load_mask.read()).squeeze().type(torch.IntTensor)
+
+
+    # confmat = ConfusionMatrix(num_classes=9) #.to(device=device)
+    # conf_print = confmat(read_pred, read_mask)
+    
+    # class_labels = ['0 (EP)','1 (MS)','2 (PH)','3 (ME)','4 (BG)','5 (FN)','6 (TB)', '7 (NH)', '8 (SH)']
+
+    # fig = plt.figure()
+    # fig, ax = plt.subplots(figsize=(10, 10)) # ax is necessary to make large number fit in the output img
+    # cm = conf_print.detach().cpu().numpy()
+    # disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_labels)
+    # #disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+    # disp.plot(values_format = '.0f', ax=ax)
+    # plt.savefig('results/inference/v13_93100_cm_norm')
+    # plt.clf() 
+    # plt.close(fig)
+
+    # import os
+
+    # cr = classification_report(y_true=read_mask.flatten(), y_pred=read_pred.flatten(), target_names=class_labels)
+    # cr_save_path = os.path.join('results/inference', 'class_report_93100.out')
+    # with open(cr_save_path, 'w') as f:
+    #     f.write(cr)
