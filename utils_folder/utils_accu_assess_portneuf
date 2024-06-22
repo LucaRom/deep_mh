@@ -1,0 +1,93 @@
+import rasterio
+import torch
+import matplotlib.pyplot as plt
+import numpy as np
+from torchmetrics import ConfusionMatrix
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report
+
+
+############################
+# Accu assess    #
+############################
+
+# pred path no post-process
+pred_path = 'results/inference/region_preds_portneuf_zone2_model_m187_estrie_v1_arg.tif'
+
+# Mask 3223
+#mask_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/portneuf_zone2/processed_raw/mask_portneuf_32_23_9classes.tif'
+
+# Mask CERFO
+#mask_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/portneuf_zone2/processed_raw/mask_portneuf_segref_cerfo_9classes.tif'
+
+# Mask 3223 + 15m buffer
+mask_path = '/mnt/d/00_Donnees/02_maitrise/01_trainings/portneuf_zone2/processed_raw/mask_portneuf_32_23_9classes_BUFFER.tif'
+
+load_pred = rasterio.open(pred_path)
+load_mask = rasterio.open(mask_path)
+
+device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+
+read_pred = load_pred.read().squeeze()
+read_pred = torch.tensor(read_pred).type(torch.IntTensor)
+read_mask = torch.tensor(load_mask.read()).squeeze().type(torch.IntTensor)
+
+
+confmat = ConfusionMatrix(num_classes=9, normalize='true', task='multiclass') #.to(device=device)
+#confmat = ConfusionMatrix(task="multiclass", normalize='true', num_classes=9) #.to(device=device)
+conf_print = confmat(read_pred, read_mask)
+
+
+class_labels = ['0 (EP)','1 (MS)','2 (PH)','3 (ME)','4 (BG)','5 (FN)','6 (TB)', '7 (NH)', '8 (SH)']
+
+## Tableau CM normé sur true
+
+#fig = plt.figure()
+fig, ax = plt.subplots(figsize=(10, 10)) # ax is necessary to make large number fit in the output img
+cm = conf_print.detach().cpu().numpy()
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_labels)
+#disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+#disp.plot(values_format = '.0f', ax=ax)
+disp.plot(values_format = '.2f', ax=ax)
+#plt.show()
+plt.savefig('results/inference/region_preds_portneuf_zone2_model_m187_estrie_v1_arg__BUFFER.png')
+plt.clf() 
+plt.close(fig)
+
+## Tableau CM normé sur pred
+
+# confmat_pred = ConfusionMatrix(num_classes=9, normalize='pred') #.to(device=device)
+# conf_print_pred = confmat_pred(read_pred, read_mask)
+
+# #fig = plt.figure()
+# fig, ax = plt.subplots(figsize=(10, 10)) # ax is necessary to make large number fit in the output img
+# cm2 = conf_print_pred.detach().cpu().numpy()
+# disp2 = ConfusionMatrixDisplay(confusion_matrix=cm2, display_labels=class_labels)
+# #disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+# #disp.plot(values_format = '.0f', ax=ax)
+# disp2.plot(values_format = '.2f', ax=ax)
+# #plt.show()
+
+
+## Tableau CM avec nombre pixel
+
+# conf_print_pixels = ConfusionMatrix(num_classes=9) #.to(device=device)
+# conf_print_pixels = conf_print_pixels(read_pred, read_mask)
+
+# #fig = plt.figure()
+# fig, ax = plt.subplots(figsize=(10, 10)) # ax is necessary to make large number fit in the output img
+# cm3 = conf_print_pixels.detach().cpu().numpy()
+# disp3 = ConfusionMatrixDisplay(confusion_matrix=cm3, display_labels=class_labels)
+# #disp = ConfusionMatrixDisplay(confusion_matrix=cm)
+# #disp.plot(values_format = '.0f', ax=ax)
+# disp3.plot(values_format = '.2f', ax=ax)
+
+
+#plt.show()
+
+
+# import os
+
+# cr = classification_report(y_true=read_mask.flatten(), y_pred=read_pred.flatten(), target_names=class_labels)
+# cr_save_path = os.path.join('results/inference', 'class_v27_z04_arg_raw.out')
+# with open(cr_save_path, 'w') as f:
+#     f.write(cr)

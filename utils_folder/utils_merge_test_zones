@@ -1,0 +1,85 @@
+import tifffile as tiff
+import rasterio
+import numpy as np
+import os
+
+############################
+# Estrie main stack        #
+############################
+
+### Zone test v04 ###
+
+main_path = '/mnt/d/00_Donnees/02_maitrise/01_trainings/estrie/full_image_zone_test/v_04'
+
+# load sen2 ete print
+# paths
+sen2_e_path = os.path.join(main_path, 's2_estrie_3m_ete_test_v04.tif')
+sen2_p_path = os.path.join(main_path, 's2_estrie_3m_prin_test_v04.tif')
+
+# load
+sen2_e_img = np.array(tiff.imread(sen2_e_path), dtype=np.float32)
+sen2_p_img = np.array(tiff.imread(sen2_p_path), dtype=np.float32)
+sen2_e_img = sen2_e_img.transpose(2,0,1)
+sen2_p_img = sen2_p_img.transpose(2,0,1)
+print('done sen2')
+
+# load sentinel1
+# paths
+sen1_e_path = os.path.join(main_path, 's1_estrie_3m_ete_test_v04.tif')
+sen1_p_path = os.path.join(main_path, 's1_estrie_3m_prin_test_v04.tif')
+
+# load
+sen1_e_img = np.array(tiff.imread(sen1_e_path), dtype=np.float32)
+sen1_p_img = np.array(tiff.imread(sen1_p_path), dtype=np.float32)
+sen1_e_img = sen1_e_img.transpose(2,0,1)
+sen1_p_img = sen1_p_img.transpose(2,0,1)
+
+print('done sen1')
+
+# load lidar 
+# paths
+mnt_path = os.path.join(main_path, 'mnt_estrie_3m_test_v04.tif') 
+mhc_path = os.path.join(main_path, 'mhc_estrie_3m_test_v04.tif')
+slo_path = os.path.join(main_path, 'pente_estrie_3m_test_v04.tif')
+tpi_path = os.path.join(main_path, 'tpi_estrie_3m_test_v04.tif')
+tri_path = os.path.join(main_path, 'tri_estrie_3m_test_v04.tif')
+twi_path = os.path.join(main_path, 'twi_estrie_3m_test_v04.tif')
+
+img_mnt = np.array(tiff.imread(mnt_path))
+img_mnt = np.expand_dims(img_mnt, axis=0)
+
+img_mhc = np.array(tiff.imread(mhc_path))
+img_mhc = np.expand_dims(img_mhc, axis=0)
+
+img_slopes = np.array(tiff.imread(slo_path))
+img_slopes = np.expand_dims(img_slopes, axis=0)
+
+img_tpi = np.array(tiff.imread(tpi_path))
+img_tpi = np.expand_dims(img_tpi, axis=0)
+
+img_tri = np.array(tiff.imread(tri_path))
+img_tri = np.expand_dims(img_tri, axis=0)
+
+img_twi = np.array(tiff.imread(twi_path))
+img_twi = np.expand_dims(img_twi, axis=0)
+print('done LiDAR')
+
+# stack IT!
+full_img = np.vstack((sen2_e_img, sen2_p_img, sen1_e_img, sen1_p_img, img_mnt, img_mhc, img_slopes, img_tpi, img_tri, img_twi))
+
+for_profile = rasterio.open(sen2_e_path)
+
+with rasterio.open(
+    'results/full_stack/stack_estrie_3m_test_v04_2024.tif',
+    'w',
+    driver='GTiff',
+    height=full_img.shape[1],
+    width=full_img.shape[2],
+    count=full_img.shape[0],
+    dtype=full_img.dtype,
+    crs=for_profile.crs,
+    transform=for_profile.transform,
+) as dst:
+    dst.write(full_img)
+
+print(full_img.shape)

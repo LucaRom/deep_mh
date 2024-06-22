@@ -1,11 +1,17 @@
 __pycache__/
+bckps/
 lightning_logs/
 lightning_logs_backup/
 logs/
 olds/
+outputs/
 results/
+TRI2024/
 .git_bckps/
 .vscode/
+*.db
+*.npy
+*.npz
 *.png
 *.yaml
 *.joblib

@@ -1,0 +1,155 @@
+import numpy as np
+import rasterio
+import tifffile as tiff
+import torch
+import os
+import matplotlib.pyplot as plt
+from torchmetrics import ConfusionMatrix
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report
+
+###########################
+# Load path               #
+###########################
+
+# Masks
+# Mask clipped portneuf nord 3223
+#mask_path = "/mnt/d/00_Donnees/02_maitrise/01_trainings/portneuf_zone1/clipped_mask_portneuf_nord.tif"
+
+# Mask 3223
+#mask_path = '/mnt/d/00_Donnees/02_maitrise/01_trainings/estrie/full_image_zone_test/v_04/estrie_mask_multiclass_3223_v04.tif'
+
+# Mask 3223 + 15m buffer
+#mask_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/full_image_zone_test/v_04/mask_estrie_32_buffer15_z04.tif'
+
+# Mask ori
+#mask_path = '/mnt/d/00_Donnees/02_maitrise/01_trainings/estrie/full_image_zone_test/v_04/mask_estrie_multiclass_ori_v04.tif'
+
+# Mask ori TEST AVEC CLASSE NEGATIVE
+#mask_path = '/home/luca/tesT_me_more.tif'
+
+###########################
+# Argmax on prob raster   #
+###########################
+
+
+
+#raster_path = 'results/inference/region_preds_portneuf_nord_model_m30_estrie_stack.tif'
+raster_path = 'results/inference/region_preds_estrie_model_m124_estrie_delete_me_please_test_my_PP.tif'
+output_path = os.path.join('results/inference', os.path.splitext(os.path.basename(raster_path))[0] + '_arg.tif')
+
+if os.path.exists(output_path):
+    pass
+else:
+    raster_prob = np.array(tiff.imread(raster_path), dtype=np.float32)
+
+    raster_prob = np.moveaxis(raster_prob, -1, 0)
+
+    preds = raster_prob[:9,:,:]
+    preds_sig = np.argmax(preds, axis=0)
+    preds_sig = np.expand_dims(preds_sig, axis=0)
+
+    for_profile = rasterio.open(raster_path)
+
+    profile = for_profile.profile
+    profile['count'] = 1
+    profile['nodata'] = 99
+
+    with rasterio.open(
+        output_path,
+        'w',
+        BIGTIFF=True,
+        **profile
+        ) as dst:
+        dst.write(preds_sig)
+
+# # Show accuracy directly
+
+# load_pred = rasterio.open(output_path)
+# load_mask = rasterio.open(mask_path)
+
+# device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+
+# read_pred = load_pred.read().squeeze()
+# read_pred = torch.tensor(read_pred).type(torch.IntTensor)
+# read_mask = torch.tensor(load_mask.read()).squeeze().type(torch.IntTensor)
+
+# # Define the number of pixels to remove from each edge
+# left_crop = 160//3  # Number of pixels to remove from the left side
+# #right_crop = 275//3  # Number of pixels to remove from the right side
+# right_crop = 250//3
+# top_crop = 100//3  # Number of pixels to remove from the top
+# bottom_crop = 230//3  # Number of pixels to remove from the bottom
+
+# left_crop = 0
+# bottom_crop = 1
+# top_crop = 0
+# right_crop = 1
+
+# # Crop the specified number of pixels from each edge
+# # read_pred = read_pred[top_crop:-bottom_crop, left_crop:-right_crop]
+# # read_mask = read_mask[top_crop:-bottom_crop, left_crop:-right_crop]
+
+# confmat = ConfusionMatrix(task='multiclass', num_classes=9, normalize='true') #.to(device=device)
+# conf_print = confmat(read_pred, read_mask)
+
+# class_labels = ['EP','MS','PH','ME','BG','FN','TB', 'NH', 'SH']
+
+# fig, ax = plt.subplots(figsize=(6, 6)) # ax is necessary to make large number fit in the output img
+# cm = conf_print.detach().cpu().numpy()
+# disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_labels)
+# disp.plot(values_format = '.2f', ax=ax)
+# plt.show()
+
+
+#####################################################
+# Argmax on probabilities raster + post processing  #
+#####################################################
+
+# #raster_path = 'results/inference/estrie_m27_z04_v03.tif'
+
+# raster_path = 'results/inference/estrie_m27_z04_v03_softmax_tests_00.tif'
+
+# load_mhc = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/estrie/full_image_zone_test/v_04/mhc_estrie_3m_test_v04.tif'
+
+# raster_prob = np.array(tiff.imread(raster_path), dtype=np.float32)
+
+# raster_prob = np.moveaxis(raster_prob, -1, 0)
+
+# preds = raster_prob[:9,:,:]
+# preds_sig = np.argmax(preds, axis=0)
+
+# # Post-process MHC (4 = bg, 6 = tb)
+# #
+
+# mhc_ras = np.array(tiff.imread(load_mhc), dtype=np.float32)
+
+# stack_mhc_preds = np.stack((preds_sig, mhc_ras))
+
+# #stack_mhc_preds[0]:
+
+# preds_val, mhc_val = stack_mhc_preds[0, :, :], stack_mhc_preds[1, :, :]
+
+# #mask = np.zeros((3182,4242), np.uint8)
+# mask = ((preds_val == 6) & (mhc_val < 4)) 
+
+# # Using copy mainly for easier debugging
+# preds_val_copy = preds_val.copy()
+# preds_val_copy[mask] = 4
+
+# #print((stack_mhc_preds[0, :, :] == preds_val).all())
+
+# preds_out = np.expand_dims(preds_val_copy , axis=0)
+
+# for_profile = rasterio.open(raster_path)
+
+# profile = for_profile.profile
+# profile['count'] = 1
+# profile['nodata'] = 9999
+
+# with rasterio.open(
+#     'results/inference/estrie_m27_z04_v03_arg_mod_TB_BG.tif',
+#     'w',
+#     BIGTIFF=True,
+#     **profile
+#     ) as dst:
+#     dst.write(preds_out)

@@ -1,0 +1,81 @@
+import tifffile as tiff
+import rasterio
+import numpy as np
+import os
+
+############################
+# Estrie main stack        #
+############################
+
+### Zone test v04 ###
+
+main_path = '/mnt/Data/00_Donnees/02_maitrise/01_trainings/portneuf/zone02/processed_raw/3m_full_zone'
+
+# load sen2 ete print
+# paths
+sen2_e_path = os.path.join(main_path, 's2_3m_portneuf_ete_2018.tif')
+sen2_p_path = os.path.join(main_path , 's2_3m_portneuf_prin_2018.tif')
+
+# load
+sen2_e_img = np.array(tiff.imread(sen2_e_path), dtype=np.float32)
+sen2_p_img = np.array(tiff.imread(sen2_p_path), dtype=np.float32)
+sen2_e_img = sen2_e_img.transpose(2,0,1)
+sen2_p_img = sen2_p_img.transpose(2,0,1)
+print('done sen2')
+
+# load sentinel1
+# paths
+sen1_e_path = os.path.join(main_path, 's1_3m_portneuf_ete_2018.tif')
+sen1_p_path = os.path.join(main_path, 's1_3m_portneuf_prin_208.tif')
+
+# load
+sen1_e_img = np.array(tiff.imread(sen1_e_path), dtype=np.float32)
+sen1_p_img = np.array(tiff.imread(sen1_e_path), dtype=np.float32)
+sen1_e_img = sen1_e_img.transpose(2,0,1)
+sen1_p_img = sen1_p_img.transpose(2,0,1)
+
+print('done sen1')
+
+# load lidar 
+# paths
+mhc_path = os.path.join(main_path, 'mhc_3m_portneuf.tif')
+slo_path = os.path.join(main_path, 'slo_3m_portneuf.tif')
+tpi_path = os.path.join(main_path, 'tpi_3m_portneuf.tif')
+tri_path = os.path.join(main_path, 'tri_3m_portneuf.tif')
+twi_path = os.path.join(main_path, 'twi_3m_portneuf.tif')
+
+img_mhc = np.array(tiff.imread(mhc_path))
+img_mhc = np.expand_dims(img_mhc, axis=0)
+
+img_slopes = np.array(tiff.imread(slo_path))
+img_slopes = np.expand_dims(img_slopes, axis=0)
+
+img_tpi = np.array(tiff.imread(tpi_path))
+img_tpi = np.expand_dims(img_tpi, axis=0)
+
+img_tri = np.array(tiff.imread(tri_path))
+img_tri = np.expand_dims(img_tri, axis=0)
+
+img_twi = np.array(tiff.imread(twi_path))
+img_twi = np.expand_dims(img_twi, axis=0)
+print('done LiDAR')
+
+# stack IT!
+full_img = np.vstack((sen2_e_img, sen2_p_img, sen1_e_img, sen1_p_img, img_mhc, img_slopes, img_tpi, img_tri, img_twi))
+
+for_profile = rasterio.open(sen2_e_path)
+
+with rasterio.open(
+    'results/full_stack/stack_portneuf_3m_zone2.tif',
+    'w',
+    driver='GTiff',
+    height=full_img.shape[1],
+    width=full_img.shape[2],
+    count=full_img.shape[0],
+    dtype=full_img.dtype,
+    crs=for_profile.crs,
+    transform=for_profile.transform,
+) as dst:
+    dst.write(full_img)
+
+print(full_img.shape)

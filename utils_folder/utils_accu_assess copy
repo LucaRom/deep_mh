@@ -1,0 +1,66 @@
+import rasterio
+import torch
+import matplotlib.pyplot as plt
+import numpy as np
+from torchmetrics import ConfusionMatrix
+from sklearn.metrics import ConfusionMatrixDisplay, classification_report
+
+
+############################
+# Accu assess    #
+############################
+
+# Predictions
+# Predictions portneuf NORD clipped
+#pred_path = "/mnt/d/00_Donnees/02_maitrise/01_trainings/portneuf_zone1/clipped_preds_m27.tif"
+#pred_path = "/mnt/d/00_Donnees/02_maitrise/03_inferences/gmq805/preds_portneuf_nord_m222_clipped.tif"
+pred_path = "/mnt/d/00_Donnees/02_maitrise/03_inferences/gmq805/preds_portneuf_nord_m30_(stack)_clipped.tif"
+
+# Masks
+# Mask clipped portneuf nord 3223
+mask_path = "/mnt/d/00_Donnees/02_maitrise/01_trainings/portneuf_zone1/clipped_mask_portneuf_nord.tif"
+
+load_pred = rasterio.open(pred_path)
+load_mask = rasterio.open(mask_path)
+
+device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+
+read_pred = load_pred.read().squeeze()
+read_pred = torch.tensor(read_pred).type(torch.IntTensor)
+read_mask = torch.tensor(load_mask.read()).squeeze().type(torch.IntTensor)
+
+# Set no data values to -1
+#no_data_value = -1
+read_pred[read_pred == 99] = -1
+read_mask[read_mask == -2147483648] = -1
+
+# Create a mask of valid pixels
+mask = (read_pred != -1) & (read_mask != -1)
+
+# Apply the mask to the prediction and mask arrays
+masked_pred = read_pred[mask]
+masked_mask = read_mask[mask]
+
+
+confmat = ConfusionMatrix(task='multiclass', num_classes=9, normalize='true') #.to(device=device)
+conf_print = confmat(masked_pred, masked_mask)
+
+   
+#class_labels = ['0 (EP)','1 (MS)','2 (PH)','3 (ME)','4 (BG)','5 (FN)','6 (TB)', '7 (NH)', '8 (SH)']
+class_labels = ['EP','MS','PH','ME','BG','FN','TB', 'NH', 'SH']
+
+# Tableau CM normé sur true
+
+#fig = plt.figure()
+fig, ax = plt.subplots(figsize=(6, 6)) # ax is necessary to make large number fit in the output img
+cm = conf_print.detach().cpu().numpy()
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_labels)
+disp.plot(values_format = '.2f', ax=ax)
+
+plt.show()
+
+# Classification report
+targets_class_num = np.unique(masked_mask)
+cr = classification_report(y_true=masked_mask, y_pred=masked_pred, target_names=class_labels, labels=targets_class_num)
+
+print(cr)
