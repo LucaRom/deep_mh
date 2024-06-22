@@ -59,7 +59,7 @@ def plot_band_distributions_and_count(dataloaders, num_bands):
 
 # def load_model(cfg, data_module=None):
 #     model_path = cfg.model_path
-#     class_weights = None if cfg.mode == 'test' else data_module.class_weights if data_module else None
+#     class_weights = None if cfg.mode == 'test' else train_weights if data_module else None
 #     return model.load_from_checkpoint(model_path, cfg=cfg.model, class_weights=class_weights, strict=False)
 
 def set_test_mask(cfg, mask_name, generate_outputs=False):
@@ -224,8 +224,9 @@ def main(cfg: DictConfig):
         lightning_log_num = trainer.logger.version
         logger.info(f"Lightning log version number : {lightning_log_num}")
 
-        print('WEIGHTS:', data_module.class_weights)
-        model = SemSegment(cfg=cfg.model, class_weights=data_module.class_weights)
+        train_weights = data_module.train_class_weights
+        print('WEIGHTS:', train_weights)
+        model = SemSegment(cfg=cfg.model, class_weights=train_weights)
         #model = SemSegment(cfg=cfg.model, class_weights=None)
 
         if cfg.mode == 'test':
@@ -250,7 +251,7 @@ def main(cfg: DictConfig):
 
         elif cfg.mode == 'resume':
             #model_path = cfg.model_path
-            #model = model.load_from_checkpoint(model_path, cfg=cfg.model, class_weights=data_module.class_weights, strict=False)
+            #model = model.load_from_checkpoint(model_path, cfg=cfg.model, class_weights=train_weights, strict=False)
             model_path = cfg.model_path
             new_trainer = Trainer(
                 resume_from_checkpoint=model_path,
@@ -269,7 +270,7 @@ def main(cfg: DictConfig):
 
         elif cfg.mode == 'finetune':
             model_path = cfg.model_path
-            model = model.load_from_checkpoint(model_path, cfg=cfg.model, class_weights=data_module.class_weights, strict=False)
+            model = model.load_from_checkpoint(model_path, cfg=cfg.model, class_weights=train_weights, strict=False)
             trainer.fit(model, train_loader, val_loader)
             trainer.test(model, test_loader)
 

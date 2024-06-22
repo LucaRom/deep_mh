@@ -36,14 +36,20 @@ class EstrieDataModule:
         self.pin_memory = pin_memory
         self.debug_mode = debug_mode
         self.debug_size = debug_size
+
+        # Load paths and indexes
         self.paths_list, self.trainval_idx_lst, self.test_idx_lst = self.load_paths_and_indexes()
+        # Load means and standard deviations
         self.mean_lst, self.stdev_lst = self.load_means_and_stdevs()
 
-        # Calculate class weights to feed loss
-        temp_mask_dir = os.path.join(self.paths_list[0], self.test_mask_dir)
-        class_distribution = self.calculate_class_distribution(temp_mask_dir, self.trainval_idx_lst)
-        aggregated_counts = self.aggregate_class_counts(class_distribution)
-        self.class_weights = self.calculate_class_weights(aggregated_counts)
+        if not self.test_mode:
+            mask_dir = os.path.join(self.paths_list[0], self.test_mask_dir)
+            self.class_dist = self.calculate_class_distribution(mask_dir, self.trainval_idx_lst)
+            self.train_idx, self.val_idx = self.stratified_split(self.class_dist, val_ratio=0.1)
+
+            train_class_distribution = {k: self.class_dist[k] for k in self.train_idx}
+            aggregated_counts = self.aggregate_class_counts(train_class_distribution)
+            self.train_class_weights = self.calculate_class_weights(aggregated_counts)
 
     def load_paths_and_indexes(self):
         # Logic to load paths and indexes based on input_format
@@ -154,96 +160,18 @@ class EstrieDataModule:
         val_idx = list(val_set)
         
         return train_idx, val_idx
-
-    # def create_dataloaders(self):
-    #     if self.test_mode:
-    #         print('This is test mode only')
-    #         test_dataset = EstrieDataset(
-    #             img_train_dir=self.paths_list[0], 
-    #             classif_mode=self.classif_mode, 
-    #             mask_dir=self.test_mask_dir, 
-    #             sensors=self.sensors,
-    #             transforms=None, 
-    #             mean_lst=self.mean_lst, 
-    #             stdev_lst=self.stdev_lst, 
-    #             opt_bands=self.opt_bands, 
-    #             lidar_bands=self.lidar_bands,
-    #             sar_bands=self.sar_bands, 
-    #             indices_lst=self.indices_lst, 
-    #             idx_list=self.test_idx_lst
-    #         )
-    #         test_loader = DataLoader(test_dataset, batch_size=1, num_workers=self.num_workers, pin_memory=False)
-    #         return test_loader
-
-    #     else:
-    #         if self.debug_mode:
-    #             # Reduce the size of the index lists for debug mode
-    #             self.trainval_idx_lst = self.trainval_idx_lst[:self.debug_size]
-    #             self.test_idx_lst = self.test_idx_lst[:self.debug_size]
-
-    #         # Split the trainval index list for training and validation
-    #         # shuffled_trainval = np.random.permutation(self.trainval_idx_lst)
-    #         # val_size = round(len(self.trainval_idx_lst)*0.1) #10%
-
-    #         # val_idx = shuffled_trainval[:val_size]  
-    #         # train_idx = [x for x in shuffled_trainval if x not in val_idx]
-
-    #         # Train val split with stratified by class
-    #         mask_dir = os.path.join(self.paths_list[0], self.test_mask_dir)
-    #         class_dist = self.calculate_class_distribution(mask_dir, self.trainval_idx_lst)
-    #         train_idx, val_idx = self.stratified_split(class_dist, val_ratio=0.1)
-
-    #         # Initialize datasets with the respective idx lists corrected
-    #         train_dataset = EstrieDataset(
-    #             img_train_dir=self.paths_list[0], 
-    #             classif_mode=self.classif_mode, 
-    #             mask_dir=self.train_mask_dir, 
-    #             sensors=self.sensors,
-    #             transforms=self.train_transforms,
-    #             mean_lst=self.mean_lst, 
-    #             stdev_lst=self.stdev_lst, 
-    #             opt_bands=self.opt_bands, 
-    #             lidar_bands=self.lidar_bands, 
-    #             sar_bands=self.sar_bands, 
-    #             indices_lst=self.indices_lst, 
-    #             idx_list=train_idx 
-    #         )
-    #         val_dataset = EstrieDataset(
-    #             img_train_dir=self.paths_list[0], 
-    #             classif_mode=self.classif_mode, 
-    #             mask_dir=self.val_mask_dir, 
-    #             sensors=self.sensors,
-    #             transforms=None,
-    #             mean_lst=self.mean_lst, 
-    #             stdev_lst=self.stdev_lst, 
-    #             opt_bands=self.opt_bands, 
-    #             lidar_bands=self.lidar_bands,
-    #             sar_bands=self.sar_bands, 
-    #             indices_lst=self.indices_lst, 
-    #             idx_list=val_idx 
-    #         )
-    #         test_dataset = EstrieDataset(
-    #             img_train_dir=self.paths_list[0], 
-    #             classif_mode=self.classif_mode, 
-    #             mask_dir=self.test_mask_dir, 
-    #             sensors=self.sensors,
-    #             transforms=None, 
-    #             mean_lst=self.mean_lst, 
-    #             stdev_lst=self.stdev_lst, 
-    #             opt_bands=self.opt_bands, 
-    #             lidar_bands=self.lidar_bands,
-    #             sar_bands=self.sar_bands, 
-    #             indices_lst=self.indices_lst, 
-    #             idx_list=self.test_idx_lst
-    #         )
-
-    #         # Initialize DataLoaders without samplers
-    #         train_loader = DataLoader(train_dataset, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=self.pin_memory)
-    #         val_loader = DataLoader(val_dataset, batch_size=self.batch_size, num_workers=self.num_workers, pin_memory=self.pin_memory)
-    #         test_loader = DataLoader(test_dataset, batch_size=1, num_workers=self.num_workers, pin_memory=False)
-  
-    #         return train_loader, val_loader, test_loader
-        
+    
+    def calculate_sample_weights(self, idx_list, class_dist):
+        weights = []
+        for idx in idx_list:
+            class_distribution = class_dist[idx]
+            if len(class_distribution) == 1 and 7.0 in class_distribution:
+                weight = 1
+            else:
+                weight = sum(self.train_class_weights[int(class_id)] * count for class_id, count in class_distribution.items() if class_id != 7) / sum(count for class_id, count in class_distribution.items() if class_id != 7)
+            weights.append(weight)
+        return weights
+    
     def create_dataloaders(self):
             if self.test_mode:
                 print('This is test mode only')
@@ -270,34 +198,9 @@ class EstrieDataModule:
                     self.trainval_idx_lst = self.trainval_idx_lst[:self.debug_size]
                     self.test_idx_lst = self.test_idx_lst[:self.debug_size]
 
-                # Split the trainval index list for training and validation
-                # shuffled_trainval = np.random.permutation(self.trainval_idx_lst)
-                # val_size = round(len(self.trainval_idx_lst)*0.1) #10%
-
-                # val_idx = shuffled_trainval[:val_size]  
-                # train_idx = [x for x in shuffled_trainval if x not in val_idx]
-
-                # Train val split with stratified by class
-                mask_dir = os.path.join(self.paths_list[0], self.test_mask_dir)
-                class_dist = self.calculate_class_distribution(mask_dir, self.trainval_idx_lst)
-                train_idx, val_idx = self.stratified_split(class_dist, val_ratio=0.1)
-
-                # Calculate weights for each sample
-                weights = []
-                
-                for idx in train_idx:
-                    class_distribution = class_dist[idx]
-                    if len(class_distribution) == 1 and 7.0 in class_distribution:
-                        # If class 7 is the only class in the distribution
-                        weight = 1
-                    else:
-                        # Compute a weighted sum or average based on the class distribution
-                        #weight_1 = sum(self.class_weights[int(class_id)] * count for class_id, count in class_distribution.items()) / sum(class_distribution.values())
-                        weight = sum(self.class_weights[int(class_id)] * count for class_id, count in class_distribution.items() if class_id != 7) /  sum(count for class_id, count in class_distribution.items() if class_id != 7)
-                        
-                    weights.append(weight)
-
-                sampler = WeightedRandomSampler(weights, num_samples=int(len(weights)*1.5), replacement=True)
+                # Calculate sample's weights with classes weights and define sampler
+                train_sample_weights = self.calculate_sample_weights(self.train_idx, self.class_dist)
+                sampler = WeightedRandomSampler(train_sample_weights, num_samples=int(len(train_sample_weights)*1.5), replacement=True)
 
                 # Initialize datasets with the respective idx lists corrected
                 train_dataset = EstrieDataset(
@@ -312,7 +215,7 @@ class EstrieDataModule:
                     lidar_bands=self.lidar_bands, 
                     sar_bands=self.sar_bands, 
                     indices_lst=self.indices_lst, 
-                    idx_list=train_idx 
+                    idx_list=self.train_idx 
                 )
                 val_dataset = EstrieDataset(
                     img_train_dir=self.paths_list[0], 
@@ -326,7 +229,7 @@ class EstrieDataModule:
                     lidar_bands=self.lidar_bands,
                     sar_bands=self.sar_bands, 
                     indices_lst=self.indices_lst, 
-                    idx_list=val_idx 
+                    idx_list=self.val_idx 
                 )
 
                 test_dataset = EstrieDataset(
