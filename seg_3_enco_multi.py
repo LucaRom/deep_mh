@@ -18,17 +18,23 @@ from tqdm import tqdm
 import os
 import datetime
 import matplotlib.pyplot as plt
-
+from pytorch_lightning.callbacks import Callback, ModelCheckpoint, LearningRateMonitor, EarlyStopping
 import hydra
+import segmentation_models_pytorch as smp
+from utils.custom_loss import FocalLoss
 
 
-#from pl_bolts.models.vision.unet import UNet
+# Custom LR
+import utils.utils
+#from utils.custom_loss import FocalLoss
 from unet_models.unet_3enco_sum import unet_3enco_sum
 from unet_models.unet_3enco_sum_droplayers import unet_3enco_sum_drop
 from unet_models.unet_3enco_concat import unet_3enco_concat
 from unet_models.unet_3enco_concat_attention import unet_3enco_concat_attention
 from unet_models.unet_3enco_concat_dropout import unet_3enco_concat_dropout
-from pytorch_lightning.callbacks import Callback, ModelCheckpoint, LearningRateMonitor, EarlyStopping
+
+
+
 
 # Remove num_workers warning during training
 # TODO test num_workers further
@@ -37,27 +43,24 @@ warnings.filterwarnings("ignore", ".*does not have many workers.*")
 
 # Remove divide warning during training, should be turn back on when calculating indices on the fly
 # or having loss as NaN
-print()
-print("WARNING, divide and invalid error from numpy are deactivated"
-      "Activate in case of error such as loss=nan")
-print()
+# print()
+# print("WARNING, divide and invalid error from numpy are deactivated"
+#       "Activate in case of error such as loss=nan")
+# print()
 np.seterr(divide='ignore', invalid='ignore')
 
-# Custom LR
-import utils_folder.utils
+# Set default precision for torch
+torch.set_float32_matmul_precision('highest')
+device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu") # Add to specified some tensor to GPU
 
-# Custom loss
-from utils_folder.custom_loss import FocalLoss
-
-# Add to specified some tensor to GPU
-device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("cpu")
+logger = logging.getLogger(__name__)
 
 # TODO Make a 'time' or debug variable that would activate or deactive time prints
 #start_time_glob = time.time()
 
 
 class SemSegment(LightningModule):
-    def __init__(self, cfg, class_weights):
+    def __init__(self, cfg, class_weights=None):
         super().__init__()
         self.cfg = cfg
         self.classif_mode = cfg.classif_mode
@@ -69,6 +72,16 @@ class SemSegment(LightningModule):
         self.calculate_input_channels()
         self.init_metrics()     
         
+        # self.criterion = smp.losses.FocalLoss(
+        #         'multiclass', alpha=0.5, ignore_index=-1, normalized=False
+        #     )
+
+        #self.criterion = FocalLoss(weight=self.class_weights, ignore_index=-1)
+
+        #val_loss = torch.nn.CrossEntropyLoss(ignore_index=-1)(preds, mask)
+        #val_loss = FocalLoss(weight=self.class_weights, ignore_index=-1)(preds, mask)
+        #val_loss = FocalLoss(ignore_index=-1)(preds, mask)
+
         # Initiate value list for plotting
         self.epoch_counter = 0
         self.train_losses = []
@@ -106,6 +119,16 @@ class SemSegment(LightningModule):
                 input_channels_lidar=self.input_channels_lidar,
                 input_channels_radar=self.input_channels_radar,
                 #num_layers=self.cfg.num_layers,
+                features_start=self.cfg.features_start,
+                bilinear=self.cfg.bilinear,
+            )
+
+        elif self.cfg.architecture == 'unet_3enco_concat_3_layers':
+            self.net = unet_3enco_concat(
+                num_classes=self.num_classes,
+                input_channels=self.input_channels_main,
+                input_channels_lidar=self.input_channels_lidar,
+                input_channels_radar=self.input_channels_radar,
                 features_start=self.cfg.features_start,
                 bilinear=self.cfg.bilinear,
             )
@@ -160,18 +183,21 @@ class SemSegment(LightningModule):
                 self.train_f1 = torchmetrics.F1Score(task="binary")
                 self.val_f1 = torchmetrics.F1Score(task="binary")
         else:
-            self.train_accuracy = torchmetrics.classification.MulticlassAccuracy(num_classes = self.num_classes, average = "micro")
+            self.train_accuracy = torchmetrics.classification.MulticlassAccuracy(num_classes=self.num_classes, average="micro")
             self.val_accuracy = torchmetrics.classification.MulticlassAccuracy(num_classes = self.num_classes, average = "micro")
             # self.train_f1 = torchmetrics.classification.MulticlassF1Score(num_classes = num_classes, average = "micro")
             # self.val_f1 = torchmetrics.classification.MulticlassF1Score(num_classes = num_classes, average = "micro")
             self.train_f1 = torchmetrics.classification.MulticlassF1Score(num_classes = self.num_classes, average = "micro", ignore_index = 7)
             self.val_f1 = torchmetrics.classification.MulticlassF1Score(num_classes = self.num_classes, average = "micro", ignore_index = 7)
 
+        # self.test_accuracy = torchmetrics.classification.MulticlassAccuracy(num_classes=self.num_classes, average="micro")
+        # self.test_f1 = torchmetrics.classification.MulticlassF1Score(num_classes=self.num_classes, average="micro", ignore_index = 7)      
+
     def configure_optimizers(self):
         if self.cfg.optim_main == 'Ad':
             opt = torch.optim.Adam(self.net.parameters(), weight_decay = self.cfg.weight_decay, lr=self.cfg.lr)
         else:
-            opt = torch.optim.SGD(self.net.parameters(), momentum = 0.9, weight_decay = self.cfg.weight_decay, lr=self.cfg.lr)
+            opt = torch.optim.SGD(self.net.parameters(), momentum = self.cfg.momentum, weight_decay = self.cfg.weight_decay, lr=self.cfg.lr)
 
         #sch = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max = 10)
         #sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.95, mode='min', patience=7, verbose=True)
@@ -224,9 +250,6 @@ class SemSegment(LightningModule):
             f.write(f'Num of LiDAR bands  : {self.input_channels_lidar}\n')
             f.write(f'LiDAR bands  : {self.input_channels_lidar}\n')
             f.write(f'Num of radar bands : {self.input_channels_radar}\n')
-            f.write(f'Train mask  : {self.cfg.train_mask_dir}\n')
-            f.write(f'Val mask  : {self.cfg.val_mask_dir}\n')
-            f.write(f'Test mask : {self.cfg.test_mask_dir}\n')
             f.write(f'Num_workers : {self.cfg.num_workers}\n')
             f.write(f'Pin memory : {self.cfg.pin_memory}\n\n')
 
@@ -236,8 +259,8 @@ class SemSegment(LightningModule):
 
 
             # Dataset parameters
-            f.write(f'Train region : {self.cfg.input_format}\n')
-            f.write(f'Test region : {self.cfg.test_region }\n')
+            # f.write(f'Train region : {self.cfg.input_format}\n')
+            # f.write(f'Test region : {self.cfg.test_region }\n')
             f.write(f'Classification mode : {self.cfg.classif_mode}\n')
 
             # Close file
@@ -260,6 +283,9 @@ class SemSegment(LightningModule):
 
         img, lidar, mask, radar, img_path = batch # img_path only needed in test, but still carried
                                                   # Batch expected output are linked from the dataset.py file
+        
+        unique_values = torch.unique(mask)
+        logger.debug("Unique values in a mask tensor:", unique_values)
 
         img = img.float()   # x
         lidar = lidar.float()
@@ -276,8 +302,9 @@ class SemSegment(LightningModule):
             train_loss = torch.nn.CrossEntropyLoss(weight=self.class_weights, ignore_index=-1)(preds, mask)
             preds_accu = preds.argmax(dim=1).unsqueeze(1)
         else: 
-            train_loss = FocalLoss(weight=self.class_weights, ignore_index=-1)(preds, mask)
-            #train_loss = torch.nn.CrossEntropyLoss(weight=self.class_weights, ignore_index=-1)(preds, mask)
+            #train_loss = FocalLoss(weight=self.class_weights, ignore_index=-1)(preds, mask)
+            train_loss = torch.nn.CrossEntropyLoss(weight=self.class_weights, ignore_index=-1)(preds, mask)
+            #train_loss = self.criterion(preds, mask)
             mask_loss = mask_loss.type(torch.IntTensor).to(device=device)
             preds_accu = preds.argmax(dim=1).unsqueeze(1)
 
@@ -321,25 +348,39 @@ class SemSegment(LightningModule):
         # Switch to eval mode
         self.trainer.model.eval()
 
+        if batch is None:
+            return None 
+
         with torch.no_grad():
             img, lidar, mask, radar, img_path = batch  #img_path only needed in test
+
+            unique_values = torch.unique(mask)
+            logger.debug("Unique values in a mask tensor:", unique_values)
+
             img = img.float()   # x
             lidar = lidar.float()
             mask = mask.long()  # y
             radar = radar.float()
 
             preds = self(img, lidar, radar)   # predictions
-
             mask_loss = mask.float().unsqueeze(1) # Unsqueeze for BCE
 
             # Same for bin and multi class (since using 2 classes for bin)
-            #val_loss = torch.nn.CrossEntropyLoss(ignore_index=-1)(preds, mask)
-            val_loss = FocalLoss(weight=self.class_weights, ignore_index=-1)(preds, mask)
+            val_loss = torch.nn.CrossEntropyLoss(ignore_index=-1)(preds, mask)
+            #val_loss = FocalLoss(weight=self.class_weights, ignore_index=-1)(preds, mask)
+            #val_loss = FocalLoss(ignore_index=-1)(preds, mask)
+            #val_loss = self.criterion(preds, mask)
+
             preds_accu = preds.argmax(dim=1).unsqueeze(1)
 
+            # Filter out ignored index (-1) from predictions and targets (for val_accu, val_f1)
+            filtered_preds, filtered_targets = self.filter_ignore_index(preds_accu, mask_loss, ignore_index=-1)
+
             mask_loss = mask_loss.type(torch.IntTensor).to(device=device)
-            val_accu = self.val_accuracy(preds_accu, mask_loss)
-            val_f1   = self.val_f1(preds_accu, mask_loss)
+            # val_accu = self.val_accuracy(preds_accu, mask_loss)
+            # val_f1   = self.val_f1(preds_accu, mask_loss)
+            val_accu = self.val_accuracy(filtered_preds, filtered_targets)
+            val_f1   = self.val_f1(filtered_preds, filtered_targets)
 
             self.log("val_loss", val_loss.detach(), batch_size=self.batch_size)
             self.log("val_f1", val_f1.detach(), batch_size=self.batch_size)
@@ -371,6 +412,9 @@ class SemSegment(LightningModule):
     @torch.no_grad()
     #def test_step(self, batch, batch_idx, dataloader_idx):
     def test_step(self, batch, batch_idx):
+
+        if batch is None:
+            return None 
 
         # gc.collect()
         # torch.cuda.empty_cache()
@@ -413,30 +457,99 @@ class SemSegment(LightningModule):
             filtered_preds = preds_recast[valid]
             filtered_mask = mask[valid]
 
+            # if self.cfg.ckpts_dir is not None: # lazy check before implementing proper method
+            #     test_accu = self.test_accuracy(filtered_preds, filtered_mask)
+            #     test_f1 = self.test_f1(filtered_preds, filtered_mask)
+
+            #     return {'test_accu': test_accu.detach().cpu(), 'test_f1': test_f1.detach().cpu(), 'preds': preds.detach().cpu(), 'mask': mask.detach().cpu()}
+
+            #else:
             # Create and compute confusion matrix
             if filtered_preds.numel() > 0 and filtered_mask.numel() > 0:  # Check if there are any elements to process
                 confmat = ConfusionMatrix(task='multiclass', num_classes=self.num_classes).to(device=device)
                 conf_print = confmat(filtered_preds, filtered_mask)
                 conf_print = conf_print.detach().cpu()
             else: 
-                conf_print = None  # or appropriate handling if no valid data
+                conf_print = torch.zeros(self.num_classes, self.num_classes).to(device=device)   # or appropriate handling if no valid data
+                conf_print = conf_print.detach().cpu()
 
-            # if self.classif_mode == 'bin':
-            #     confmat = ConfusionMatrix(task='binary', num_classes=self.num_classes).to(device=device)
-            # else:
-            #     confmat = ConfusionMatrix(task='multiclass', num_classes=self.num_classes).to(device=device)
+                # if self.classif_mode == 'bin':
+                #     confmat = ConfusionMatrix(task='binary', num_classes=self.num_classes).to(device=device)
+                # else:
+                #     confmat = ConfusionMatrix(task='multiclass', num_classes=self.num_classes).to(device=device)
 
-            # Ancienne partie 
-            #confmat = ConfusionMatrix(task='multiclass', num_classes=self.num_classes).to(device=device)
-            #conf_print = confmat(preds_recast, mask)
-        
+                # Ancienne partie 
+                #confmat = ConfusionMatrix(task='multiclass', num_classes=self.num_classes).to(device=device)
+                #conf_print = confmat(preds_recast, mask)
+            
+
+
             #return {'conf matrice': conf_print.detach().cpu(), 'preds' : preds.detach().cpu(), 'img' : img.detach().cpu(), 'lidar' : lidar.detach().cpu(), 'mask' : mask.detach().cpu(), 'radar' : radar.detach().cpu(), 'img_path' : img_path}
-            return {'conf matrice': conf_print.detach().cpu(), 'preds' : preds.detach().cpu(), 'img' : img.detach().cpu(), 'mask' : mask.detach().cpu()}
-        
+            return {'conf matrice': conf_print.detach().cpu(), 'real_preds' : filtered_preds.detach().cpu(), 'preds' : preds.detach().cpu(), 'img' : img.detach().cpu(), 'mask' : mask.detach().cpu()}
+            
     @torch.no_grad()
     def test_epoch_end(self, outputs):
         self.trainer.model.eval()
 
+        # if self.cfg.ckpts_dir is not None:
+        #     # test_accuracies = [x['test_accu'] for x in outputs]
+        #     # test_f1_scores = [x['test_f1'] for x in outputs]
+        #     # avg_test_accu = torch.stack(test_accuracies).mean().item()
+        #     # avg_test_f1 = torch.stack(test_f1_scores).mean().item()
+
+        #     # # Debugging: Print individual and average metrics
+        #     # # print("Individual Test Accuracies:", test_accuracies)
+        #     # # print("Average Test Accuracy:", avg_test_accu)
+        #     # # print("Individual Test F1 Scores:", test_f1_scores)
+        #     # # print("Average Test F1 Score:", avg_test_f1)
+
+        #     # self.avg_test_accu = avg_test_accu
+        #     # self.avg_test_f1 = avg_test_f1
+
+        #     # return avg_test_accu, avg_test_f1
+
+        #     dict_labels = utils.utils.get_project_labels()
+        #     class_num = dict_labels.keys()
+        #     class_labels = dict_labels.values()
+
+        #     # Setting output path
+        #     out_root = "lightning_logs/version_{version}".format(version = self.trainer.logger.version)
+
+        #     all_filtered_preds = torch.cat([x['real_preds'].flatten() for x in outputs])
+        #     all_filtered_masks = torch.cat([x['mask'].flatten() for x in outputs])
+
+        #     full_preds = all_filtered_preds.cpu().numpy()
+        #     full_targets = all_filtered_masks.cpu().numpy()
+
+        #     # Initialize confusion matrix
+        #     full_matrice = np.zeros((self.num_classes, self.num_classes), dtype=np.int32)
+
+        #     for pred, target in zip(full_preds, full_targets):
+        #       full_matrice[target, pred] += 1
+
+        #     class_labels = list(utils.utils.get_project_labels().values())
+
+        #     cr = classification_report(full_targets, full_preds, target_names=class_labels, output_dict=True)
+            
+        #     with open(os.path.join(out_root, f"class_report_{self.cfg.test_mask_dir}.out"), 'w') as f:
+        #         f.write(classification_report(full_targets, full_preds, target_names=class_labels))
+            
+        #     # Extract macro F1 and accuracy from classification report
+        #     macro_f1 = cr["macro avg"]["f1-score"]
+        #     accuracy = cr["accuracy"]
+        #     print(classification_report(full_targets, full_preds, target_names=class_labels))
+        #     print(f"Macro F1 Score: {macro_f1}")
+        #     print(f"Accuracy: {accuracy}")
+
+        #     self.f1_test = macro_f1
+        #     self.accu_test = accuracy
+
+        #     return {
+        #         'macro_f1': macro_f1,
+        #         'accuracy': accuracy,
+        #     }
+
+        # else:
         full_matrice = np.zeros((self.num_classes,self.num_classes))
         full_preds   = []
         full_targets  = []
@@ -445,7 +558,7 @@ class SemSegment(LightningModule):
         if self.classif_mode == 'bin':
             class_labels = ['0 (NH)', '1 (MH)']
         else:
-            dict_labels = utils_folder.utils.get_project_labels()
+            dict_labels = utils.utils.get_project_labels()
             class_num = dict_labels.keys()
             class_labels = dict_labels.values()
 
@@ -499,87 +612,88 @@ class SemSegment(LightningModule):
             # full_preds.append(predict_sig)
             # full_targets.append(ori_target)
 
-            # Generate other wanted outputs
-            if self.cfg.generate_cm_sample:             
-                disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_labels)
-                disp.plot()
-                plt.savefig(os.path.join(out_root, "cms/cm_{num}.png".format(num = x)))
-                plt.clf() 
-                plt.close()
+        # Generate other wanted outputs
+        if self.cfg.generate_cm_sample:             
+            disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_labels)
+            disp.plot()
+            plt.savefig(os.path.join(out_root, "cms/cm_{num}.png".format(num = x)))
+            plt.clf() 
+            plt.close()
 
-            if self.cfg.generate_tif_sample: 
-                # Extract CRS and transforms
-                img_path = outputs[x]['img_path']
-                with rasterio.open(img_path[0]) as src:
-                    sample_crs = src.crs
-                    transform_ori = src.transform
+        if self.cfg.generate_tif_sample: 
+            # Extract CRS and transforms
+            # Find a way to extract path without carrying it in the batch (dataset/module output)
+            img_path = outputs[x]['img_path']
+            with rasterio.open(img_path[0]) as src:
+                sample_crs = src.crs
+                transform_ori = src.transform
 
-                # write predict image to file
-                tiff_save_path =  os.path.join(out_root, "tifs/preds_{version}_{num}.tif".format(version = self.trainer.logger.version, num = x))
+            # write predict image to file
+            tiff_save_path =  os.path.join(out_root, "tifs/preds_{version}_{num}.tif".format(version = self.trainer.logger.version, num = x))
 
-                with rasterio.open(tiff_save_path, 'w', driver='GTiff', height=self.cfg.input_tile_size, width=self.cfg.input_tile_size, count=1, dtype=str(predict_sig.dtype), crs=sample_crs, transform=transform_ori) as predict_img:
-                    predict_img.write(predict_sig, 1)
-                # predict_img = rasterio.open(tiff_save_path, 'w', driver='GTiff',
-                #                 height = self.cfg.input_tile_size, width = self.cfg.input_tile_size,
-                #                 count=1, dtype=str(predict_sig.dtype),
-                #                 crs=sample_crs,
-                #                 transform=transform_ori)
+            with rasterio.open(tiff_save_path, 'w', driver='GTiff', height=self.cfg.input_tile_size, width=self.cfg.input_tile_size, count=1, dtype=str(predict_sig.dtype), crs=sample_crs, transform=transform_ori) as predict_img:
+                predict_img.write(predict_sig, 1)
+            # predict_img = rasterio.open(tiff_save_path, 'w', driver='GTiff',
+            #                 height = self.cfg.input_tile_size, width = self.cfg.input_tile_size,
+            #                 count=1, dtype=str(predict_sig.dtype),
+            #                 crs=sample_crs,
+            #                 transform=transform_ori)
 
-                # predict_img.write(predict_sig, 1)
-                # predict_img.close()
+            # predict_img.write(predict_sig, 1)
+            # predict_img.close()
 
-            if self.cfg.generate_fig_sample: 
-                # Generating figures
-                fig = plt.figure(figsize=(15, 5))
-                subfig = fig.subfigures(nrows=1, ncols=1)
-                axes = subfig.subplots(nrows=1, ncols=3,sharey=True)
-                cmap = plt.get_cmap('tab10', self.num_classes)
+        if self.cfg.generate_fig_sample: 
+            # Generating figures
+            fig = plt.figure(figsize=(15, 5))
+            subfig = fig.subfigures(nrows=1, ncols=1)
+            axes = subfig.subplots(nrows=1, ncols=3,sharey=True)
+            cmap = plt.get_cmap('tab10', self.num_classes)
 
-                # Get original optic input for ploting
-                # Fetch maximum value to see if normalization is needed in cases 
-                # where we decide to not pre-normalize images in dataset
-                # Search any bands that would have value over 255 in RGB
-                ori_input = outputs[x]['img'][0].detach().cpu().numpy()
-                ori_rgb = ori_input[[3,2,1],:,:]
-                for bands in ori_rgb:
-                    if max(bands[0]) > 255:
-                        ori_input = ori_rgb/10000
-                        break
-                    else: 
-                        ori_input = ori_rgb
+            # Get original optic input for ploting
+            # Fetch maximum value to see if normalization is needed in cases 
+            # where we decide to not pre-normalize images in dataset
+            # Search any bands that would have value over 255 in RGB
+            ori_input = outputs[x]['img'][0].detach().cpu().numpy()
+            ori_rgb = ori_input[[3,2,1],:,:]
+            for bands in ori_rgb:
+                if max(bands[0]) > 255:
+                    ori_input = ori_rgb/10000
+                    break
+                else: 
+                    ori_input = ori_rgb
 
-                # Generating images in axes 
-                #im1 = axes[0].imshow(np.transpose(ori_input, (1,2,0))*3)
-                #im1_temp = np.transpose(ori_input, (1,2,0))
-                ori_input = (ori_input - np.min(ori_input)) / (np.max(ori_input) - np.min(ori_input))
-                im1 = axes[0].imshow(np.transpose(ori_input, (1,2,0)))
-                im2 = axes[1].imshow(predict_sig, cmap=cmap,vmin = -0.5, vmax = self.num_classes - 0.5)
-                im3 = axes[2].imshow(ori_target,cmap=cmap,vmin = -0.5, vmax = self.num_classes - 0.5)
+            # Generating images in axes 
+            #im1 = axes[0].imshow(np.transpose(ori_input, (1,2,0))*3)
+            #im1_temp = np.transpose(ori_input, (1,2,0))
+            ori_input = (ori_input - np.min(ori_input)) / (np.max(ori_input) - np.min(ori_input))
+            im1 = axes[0].imshow(np.transpose(ori_input, (1,2,0)))
+            im2 = axes[1].imshow(predict_sig, cmap=cmap,vmin = -0.5, vmax = self.num_classes - 0.5)
+            im3 = axes[2].imshow(ori_target,cmap=cmap,vmin = -0.5, vmax = self.num_classes - 0.5)
 
-                # Adding colorbar to the right
-                #TODO make ax.set_yticklabels automatic with getproject_labels() ?
-                if self.classif_mode == 'bin':
-                    cbar = subfig.colorbar(im2, shrink=0.7, ax=axes, ticks=np.arange(0,self.num_classes))
-                    cbar.ax.set_yticklabels(['1 (NH)', '0 (MH)'])
-                else:
-                    cbar = subfig.colorbar(im2, shrink=0.7, ax=axes, ticks=np.arange(0,self.num_classes))
-                    cbar.ax.set_yticklabels(['0 (EP)','1 (MS)','2 (PH)','3 (ME)','4 (BG)','5 (FN)','6 (TB)', '7 (NH)', '8 (SH)']) # Change colorbar labels
-                
-                cbar.ax.invert_yaxis() # Flip colorbar 
+            # Adding colorbar to the right
+            #TODO make ax.set_yticklabels automatic with getproject_labels() ?
+            if self.classif_mode == 'bin':
+                cbar = subfig.colorbar(im2, shrink=0.7, ax=axes, ticks=np.arange(0,self.num_classes))
+                cbar.ax.set_yticklabels(['1 (NH)', '0 (MH)'])
+            else:
+                cbar = subfig.colorbar(im2, shrink=0.7, ax=axes, ticks=np.arange(0,self.num_classes))
+                cbar.ax.set_yticklabels(['0 (EP)','1 (MS)','2 (PH)','3 (ME)','4 (BG)','5 (FN)','6 (TB)', '7 (NH)', '8 (SH)']) # Change colorbar labels
+            
+            cbar.ax.invert_yaxis() # Flip colorbar 
 
-                # Set axes names
-                axes[0].set_title('Sen2 Input')
-                axes[1].set_title('Predicted')
-                axes[2].set_title('Target')
+            # Set axes names
+            axes[0].set_title('Sen2 Input')
+            axes[1].set_title('Predicted')
+            axes[2].set_title('Target')
 
-                # Saving plot 
-                plt.savefig(os.path.join(out_root, "figs/figs_{num}.png".format(num = x)))
-                plt.clf()
-                plt.close(fig)
+            # Saving plot 
+            plt.savefig(os.path.join(out_root, "figs/figs_{num}.png".format(num = x)))
+            plt.clf()
+            plt.close(fig)
 
-        # Clear large temporary variables explicitly
-        del cm, ori_target, predict_sig
-        gc.collect()  # Invoke garbage collector manually
+            # Clear large temporary variables explicitly
+            del cm, ori_target, predict_sig
+            gc.collect()  # Invoke garbage collector manually
 
         # Creating compiled array
         full_preds_array = np.hstack([x.flatten() for x in full_preds])
@@ -620,7 +734,6 @@ class SemSegment(LightningModule):
 
         print("Finished")
 
-
         print()
         print("Generating classification report for whole dataset")
         print()
@@ -647,12 +760,27 @@ class SemSegment(LightningModule):
             labels_cr1 = [0, 1]
 
         #print(class_labels)
-        cr = classification_report(y_true=full_targets_array, y_pred=full_preds_array,  target_names=class_labels, labels=labels_cr1)
+        cr = classification_report(y_true=full_targets_array, y_pred=full_preds_array, target_names=class_labels, labels=labels_cr1)
+        cr_dict = classification_report(y_true=full_targets_array, y_pred=full_preds_array, target_names=class_labels, labels=labels_cr1, output_dict=True)
+
         cr_save_path = os.path.join(out_root, "class_report_{mask_vers}.out".format(version = self.trainer.logger.version, mask_vers = self.cfg.test_mask_dir))
         with open(cr_save_path, 'w') as f:
             f.write(cr)
-              
+            
         print(cr)
+
+        # Extract macro F1 and accuracy from classification report
+        macro_f1 = cr_dict["macro avg"]["f1-score"]
+        if 'accuracy' not in cr_dict:
+            accuracy = cr_dict["micro avg"]["f1-score"]
+        else:
+            accuracy = cr_dict["accuracy"]
+        #print(classification_report(full_targets, full_preds, target_names=class_labels))
+        #print(f"Macro F1 Score: {macro_f1}")
+        #print(f"Accuracy: {accuracy}")
+
+        self.f1_test = macro_f1
+        self.accu_test = accuracy
 
         # Remove NH class
         if self.classif_mode == 'multiclass':
@@ -674,6 +802,8 @@ class SemSegment(LightningModule):
         # Explicitly delete large objects and run garbage collection
         del full_matrice, full_preds, full_targets, full_preds_array, full_targets_array, disp_full_cm
         gc.collect()
+        
+        return {'f1_test': macro_f1, 'accu_test': accuracy}
 
     def on_train_epoch_end(self):
         train_loss = self.trainer.callback_metrics['train_loss'].item()
