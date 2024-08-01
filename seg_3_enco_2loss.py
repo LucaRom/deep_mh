@@ -1,4 +1,5 @@
 from argparse import ArgumentParser
+import matplotlib
 from matplotlib import colors
 import sys
 import gc
@@ -18,6 +19,7 @@ from tqdm import tqdm
 import os
 import datetime
 import matplotlib.pyplot as plt
+matplotlib.use('Agg')
 import hydra
 
 #from pl_bolts.models.vision.unet import UNet
@@ -49,7 +51,7 @@ device = torch.device("cuda:0") if torch.cuda.is_available() else torch.device("
 logger = logging.getLogger(__name__)
 
 class SemSegment2loss(LightningModule):
-    def __init__(self, cfg, class_weights):
+    def __init__(self, cfg, class_weights=None):
         super().__init__()
         self.cfg = cfg
         self.classif_mode = cfg.classif_mode
@@ -60,6 +62,8 @@ class SemSegment2loss(LightningModule):
             self.class_weights = self.class_weights.to(device)
         self.calculate_input_channels()
         self.init_metrics()     
+
+        self.binary_only_epochs = cfg.bin_warmup  # Number of epochs to train binary classifier only
         
         # Initiate value list for plotting
         self.epoch_counter = 0
@@ -118,7 +122,7 @@ class SemSegment2loss(LightningModule):
         if self.cfg.optim_main == 'Ad':
             opt = torch.optim.Adam(self.net.parameters(), weight_decay = self.cfg.weight_decay, lr=self.cfg.lr)
         else:
-            opt = torch.optim.SGD(self.net.parameters(), momentum = 0.9, weight_decay = self.cfg.weight_decay, lr=self.cfg.lr)
+            opt = torch.optim.SGD(self.net.parameters(), momentum = self.cfg.momentum, weight_decay = self.cfg.weight_decay, lr=self.cfg.lr)
 
         sch = torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=self.cfg.rl_factor, mode='min', patience=7, verbose=True)
         
@@ -198,13 +202,24 @@ class SemSegment2loss(LightningModule):
 
         return filtered_preds, filtered_targets
 
+    # def binary_cross_entropy_with_ignore(pred, target, ignore_index=-1):
+    #     mask = (target != ignore_index)
+    #     masked_pred = pred[mask]
+    #     masked_target = target[mask]
+    #     return torch.nn.CrossEntropyLoss(masked_pred, masked_target)
+
     def training_step(self, batch, batch_nb):
 	    # Switch to train mode
         self.trainer.model.train()
 
+        # Initialize default values for logging
+        train_accu = torch.tensor(0.0, device=self.device)
+        train_f1 = torch.tensor(0.0, device=self.device)
+        multiclass_loss = torch.tensor(0.0, device=self.device)
+
         img, lidar, mask_bin, mask_multi, radar, img_path = batch # img_path only needed in test, but still carried
-                                                  # Batch expected output are linked from the dataset.py file
-        
+                                                                  # Batch expected output are linked from the dataset.py file
+
         unique_values = torch.unique(mask_multi)
         logger.debug("Unique values in a multiclass mask tensor:", unique_values)
 
@@ -214,48 +229,57 @@ class SemSegment2loss(LightningModule):
         radar = radar.float()
         mask_bin = mask_bin.long()
 
-        mask_4loss = mask_multi.float().unsqueeze(1)
-        mask_bin_4loss = mask_bin.float().unsqueeze(1)
+        binary_mask_logits, preds_bin, preds_multi = self(img, lidar, radar)
 
-        trained_binary_mask, preds_multi = self(img, lidar, radar)
-       
-        binary_loss  = torch.nn.CrossEntropyLoss(ignore_index=-1)(trained_binary_mask, mask_bin_4loss)
+        binary_loss = torch.nn.CrossEntropyLoss(ignore_index=-1)(binary_mask_logits, mask_bin)
+        #binary_loss = self.binary_cross_entropy_with_ignore(binary_mask_logits, mask_bin)
 
-        # Create a mask where binary mask is less than or equal to 0.5
-        ignore_mask = trained_binary_mask <= 0.5
-
-        # Replace values in preds_multi with -1 where the ignore_mask is True
-        preds_multi_masked = preds_multi.clone()
-        preds_multi_masked[ignore_mask.expand_as(preds_multi_masked)] = -1
-
-        multiclass_loss = FocalLoss(weight=self.class_weights, ignore_index=-1)(preds_multi_masked, mask_multi)
-        
-        total_loss = binary_loss + multiclass_loss
-
-        preds_accu = preds_multi.argmax(dim=1).unsqueeze(1)
-
-        # For augmentations ignore value -1 
-        if self.cfg.train_transforms:
-            filtered_preds, filtered_targets = self.filter_ignore_index(preds_accu, mask_multi, ignore_index=-1)
-            train_accu = self.train_accuracy(filtered_preds, filtered_targets)
-            train_f1   = self.train_f1(filtered_preds, filtered_targets)
-        
+        if self.current_epoch < self.binary_only_epochs:
+            # Train only binary classifier
+            total_loss = binary_loss
+            multiclass_loss = torch.tensor(0.0, device=self.device)  # Dummy value for logging
         else:
-            # Train metrics call
-            train_accu = self.train_accuracy(preds_accu, mask_multi)
-            train_f1   = self.train_f1(preds_accu, mask_multi)
+            multiclass_loss = FocalLoss(weight=self.class_weights, ignore_index=-1)(preds_multi, mask_multi)
+            total_loss = binary_loss + multiclass_loss
 
-        # Call to log
+            preds_accu = preds_multi.argmax(dim=1).float()
+
+            #For augmentations ignore value -1 
+            if self.cfg.train_transforms:
+                filtered_preds, filtered_targets = self.filter_ignore_index(preds_accu, mask_multi, ignore_index=-1)
+                train_accu = self.train_accuracy(filtered_preds, filtered_targets)
+                train_f1   = self.train_f1(filtered_preds, filtered_targets)
+            
+            else:
+                # Train metrics call
+                train_accu = self.train_accuracy(preds_accu, mask_multi)
+                train_f1   = self.train_f1(preds_accu, mask_multi)
+
+            # Call to log
+            self.log("train_f1", train_f1.detach(), batch_size=self.batch_size)
+            self.log("train_accu", train_accu.detach(), batch_size=self.batch_size)
+            self.log('multiclass_loss', multiclass_loss.detach(), on_step=True, prog_bar=True, batch_size=self.batch_size)
+      
         self.log("train_loss", total_loss.detach(), on_epoch=True, on_step=True, batch_size=self.batch_size)
-        self.log("train_f1", train_f1.detach(), batch_size=self.batch_size)
-        self.log("train_accu", train_accu.detach(), prog_bar=True, batch_size=self.batch_size)
-           
+        self.log("binary_loss", binary_loss.detach(), on_epoch=True, on_step=True, prog_bar=True, batch_size=self.batch_size)
+
+        # logger.info(f'Multiclass loss : {multiclass_loss.detach()}')
+        # logger.info(f'Train accu : {train_accu.detach()}')                 
+        # logger.info(f'Binary loss : {binary_loss.detach()}')
+        # logger.info(f'Train f1 : {train_f1.detach()}')
+        
         # Return can be called in corresponding *epoch_end() section
-        return {"loss": total_loss}
+        return {"loss": total_loss, "bin_loss": binary_loss, "multi_loss": multiclass}
 
     def training_epoch_end(self, outputs):
         train_loss_avg = torch.stack([x['loss'] for x in outputs]).mean().detach().cpu()
+        # bin_loss = torch.stack([x['bin_loss'] for x in outputs]).mean().detach().cpu()
+        # multi_loss = torch.stack([x['multi_loss'] for x in outputs]).mean().detach().cpu()
+
         self.log('train_loss_avg', train_loss_avg.detach(), prog_bar=True, on_epoch=True, batch_size=self.batch_size)
+        # self.log('bin_loss', bin_loss.detach(), prog_bar=True, on_epoch=True, batch_size=self.batch_size)
+        # self.log('multi_loss', multi_loss.detach(), prog_bar=True, on_epoch=True, batch_size=self.batch_size)
+
         self.logger.experiment.add_scalars('losses', {'loss_train': train_loss_avg}, self.current_epoch)
         self.train_accuracy.reset()
         self.train_f1.reset()
@@ -263,6 +287,9 @@ class SemSegment2loss(LightningModule):
 
     def validation_step(self, batch, batch_idx):
         self.trainer.model.eval()
+                
+        # val_accu = torch.tensor(0.0, device=self.device)
+        # val_f1 = torch.tensor(0.0, device=self.device)
 
         if batch is None:
             return None 
@@ -276,14 +303,12 @@ class SemSegment2loss(LightningModule):
             radar = radar.float()
             mask_bin = mask_bin.long()
 
-            mask_4loss = mask_multi.float().unsqueeze(1)
-            mask_bin_4loss = mask_bin.float().unsqueeze(1)
+            binary_mask_logits, preds_bin, preds_multi = self(img, lidar, radar)
 
-            trained_binary_mask, preds_multi = self(img, lidar, radar)
+            binary_loss = torch.nn.CrossEntropyLoss(ignore_index=-1)(binary_mask_logits, mask_bin)
 
-            binary_loss = torch.nn.CrossEntropyLoss(ignore_index=-1)(trained_binary_mask, mask_bin_4loss)
-
-            ignore_mask = trained_binary_mask <= 0.5
+            # Replace values in preds_multi with -1 where the ignore_mask is True
+            ignore_mask = (preds_bin == 0)
             preds_multi_masked = preds_multi.clone()
             preds_multi_masked[ignore_mask.expand_as(preds_multi_masked)] = -1
 
@@ -299,7 +324,11 @@ class SemSegment2loss(LightningModule):
 
             self.log("val_loss", total_loss.detach(), batch_size=self.batch_size)
             self.log("val_f1", val_f1.detach(), batch_size=self.batch_size)
-            self.log("val_accu", val_accu.detach(), prog_bar=True, batch_size=self.batch_size)
+            self.log("val_accu", val_accu.detach(), batch_size=self.batch_size)
+
+            # logger.info(f'Val loss : {total_loss.detach()}')
+            # logger.info(f'Val accu : {val_f1.detach()}')
+            # logger.info(f'Val f1 : {val_accu.detach()}')
 
         return {"val_loss": total_loss}
 
@@ -342,10 +371,10 @@ class SemSegment2loss(LightningModule):
             radar = radar.float()
             mask_bin = mask_bin.long()
 
-            mask_4loss = mask_multi.float().unsqueeze(1)
-            mask_bin_4loss = mask_bin.float().unsqueeze(1)
+            # mask_4loss = mask_multi.float().unsqueeze(1)
+            # mask_bin_4loss = mask_bin.float().unsqueeze(1)
 
-            trained_binary_mask, preds_multi = self(img, lidar, radar)
+            binary_mask_logits, preds_bin, preds_multi = self(img, lidar, radar)
 
             preds_temp = preds_multi.argmax(dim=1)
             preds_recast = preds_temp.type(torch.IntTensor).to(device=device)     
@@ -569,12 +598,25 @@ class SemSegment2loss(LightningModule):
             labels_cr1 = [0, 1]
 
         #print(class_labels)
-        cr = classification_report(y_true=full_targets_array, y_pred=full_preds_array,  target_names=class_labels, labels=labels_cr1)
+        cr = classification_report(y_true=full_targets_array, y_pred=full_preds_array, target_names=class_labels, labels=labels_cr1)
+        cr_dict = classification_report(y_true=full_targets_array, y_pred=full_preds_array, target_names=class_labels, labels=labels_cr1, output_dict=True)
+
         cr_save_path = os.path.join(out_root, "class_report_{mask_vers}.out".format(version = self.trainer.logger.version, mask_vers = self.cfg.test_mask_dir))
         with open(cr_save_path, 'w') as f:
             f.write(cr)
+            
               
         print(cr)
+
+        # Extract macro F1 and accuracy from classification report
+        macro_f1 = cr_dict["macro avg"]["f1-score"]
+        if 'accuracy' not in cr_dict:
+            accuracy = cr_dict["micro avg"]["f1-score"]
+        else:
+            accuracy = cr_dict["accuracy"]
+
+        self.f1_test = macro_f1
+        self.accu_test = accuracy
 
         # Remove NH class
         if self.classif_mode == 'multiclass':
@@ -600,8 +642,10 @@ class SemSegment2loss(LightningModule):
     def on_train_epoch_end(self):
         train_loss = self.trainer.callback_metrics['train_loss'].item()
         self.train_losses.append(train_loss)
-        train_acc = self.trainer.callback_metrics['train_accu'].item()
-        self.train_accuracies.append(train_acc)
+
+        if self.current_epoch > self.binary_only_epochs:
+            train_acc = self.trainer.callback_metrics['train_accu'].item()
+            self.train_accuracies.append(train_acc)
 
     def on_validation_epoch_end(self):
         if not self.trainer.sanity_checking:
